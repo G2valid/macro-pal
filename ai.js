@@ -186,7 +186,7 @@ Screenshots are usually from Peloton (workout summaries: class title, instructor
 
 How to work:
 - Extract every distinct workout shown. Use the class/workout title when present.
-- type must be one of: cycling, running, walking, strength, yoga, stretching, hiit, rowing, swimming, other.
+- type must be one of: cycling, running, walking, strength, pilates, yoga, stretching, hiit, rowing, swimming, other. Use pilates for Pilates and barre classes.
 - Only report numbers that are visible. Use 0 for anything not shown; never guess.
 - duration_min in minutes. distance with its unit as shown ("mi" or "km", empty if none). output_kj is Peloton's total output; 0 if not shown.
 - daily holds all-day stats (steps, active calories, sleep hours as a decimal, resting heart rate, HRV in ms); 0 for anything not shown.
@@ -206,7 +206,7 @@ const FITNESS_SCHEMA = {
         additionalProperties: false,
         required: ["type", "title", "duration_min", "calories", "distance", "distance_unit", "avg_hr", "output_kj", "notes"],
         properties: {
-          type: { type: "string", enum: ["cycling", "running", "walking", "strength", "yoga", "stretching", "hiit", "rowing", "swimming", "other"] },
+          type: { type: "string", enum: ["cycling", "running", "walking", "strength", "pilates", "yoga", "stretching", "hiit", "rowing", "swimming", "other"] },
           title: { type: "string" },
           duration_min: { type: "number" },
           calories: { type: "number" },
@@ -253,6 +253,92 @@ export async function readFitnessScreens({ apiKey, model, images, todayYmd }) {
   };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(data.date || "")) data.date = "";
   return data;
+}
+
+/* ---------- Food coach ---------- */
+
+const COACH_SYSTEM = `You are a warm, practical nutrition coach inside a couple's personal macro-tracking app.
+You are talking to one person about their own eating. Be encouraging and specific, never preachy or shaming.
+Favor simple, realistic food that normal people cook or buy, including grocery-store and restaurant options.
+Respect stated preferences and dislikes. You are not a doctor; for medical conditions, suggest a professional briefly.
+Keep every text field short: one or two sentences.`;
+
+const IDEAS_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["intro", "ideas"],
+  properties: {
+    intro: { type: "string" },
+    ideas: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["name", "why", "portion", "calories", "protein_g", "carbs_g", "fat_g", "ingredients", "how"],
+        properties: {
+          name: { type: "string" },
+          why: { type: "string" },
+          portion: { type: "string" },
+          calories: { type: "number" },
+          protein_g: { type: "number" },
+          carbs_g: { type: "number" },
+          fat_g: { type: "number" },
+          ingredients: { type: "array", items: { type: "string" } },
+          how: { type: "string" },
+        },
+      },
+    },
+  },
+};
+
+/** Suggest meals that fit what's left of today's targets. */
+export async function suggestMeals({ apiKey, model, context, request }) {
+  const text = `Suggest 4 meal or snack ideas for me right now.
+
+${context}
+
+${request ? `What I'm in the mood for: ${request}` : "Surprise me with a good mix."}
+
+Each idea should fit inside my remaining calories and help me close my protein gap. Give macros per portion as eaten.`;
+  const data = await askClaude({ apiKey, model, system: COACH_SYSTEM, schema: IDEAS_SCHEMA, content: [{ type: "text", text }], what: "meal ideas" });
+  data.ideas = (data.ideas || []).map((i) => ({
+    name: i.name, why: i.why, portion: i.portion, ingredients: i.ingredients || [], how: i.how,
+    kcal: Math.round(i.calories), p: round1(i.protein_g), c: round1(i.carbs_g), f: round1(i.fat_g),
+  }));
+  return data;
+}
+
+const REVIEW_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["headline", "verdict", "wins", "focus", "swaps", "grocery_list"],
+  properties: {
+    headline: { type: "string" },
+    verdict: { type: "string", enum: ["great", "good", "mixed", "needs_work", "not_enough_data"] },
+    wins: { type: "array", items: { type: "string" } },
+    focus: { type: "array", items: { type: "string" } },
+    swaps: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["instead_of", "try", "why"],
+        properties: { instead_of: { type: "string" }, try: { type: "string" }, why: { type: "string" } },
+      },
+    },
+    grocery_list: { type: "array", items: { type: "string" } },
+  },
+};
+
+/** Review the last week of food logs. */
+export async function reviewEating({ apiKey, model, context }) {
+  const text = `Here is my food log for the last 7 days and my targets. Am I eating well for my goal?
+
+${context}
+
+Give: a one-line headline, an overall verdict, 2-3 specific wins, 2-3 things to focus on this week, up to 3 easy food swaps based on things I actually ate, and a short grocery list (6-10 items) that would make next week easier.
+If fewer than 3 days are logged, set verdict to not_enough_data and keep the advice general.`;
+  return askClaude({ apiKey, model, system: COACH_SYSTEM, schema: REVIEW_SCHEMA, content: [{ type: "text", text }], what: "review" });
 }
 
 function round1(n) {

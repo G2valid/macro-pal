@@ -1,4 +1,4 @@
-import { estimateFood, readFitnessScreens, prepareImage, MODELS, DEFAULT_MODEL } from "./ai.js?v=3";
+import { estimateFood, readFitnessScreens, suggestMeals, reviewEating, prepareImage, MODELS, DEFAULT_MODEL } from "./ai.js?v=4";
 
 /* =========================================================
    Storage
@@ -34,7 +34,7 @@ const THEMES = {
 const MEAL_EMO = { Breakfast: "🍳", Lunch: "🥗", Dinner: "🍽️", Snacks: "🍿" };
 const WORKOUTS = {
   cycling: { emo: "🚴", label: "Cycling" }, running: { emo: "🏃", label: "Running" }, walking: { emo: "🚶", label: "Walking" },
-  strength: { emo: "🏋️", label: "Strength" }, hiit: { emo: "⚡", label: "HIIT" }, yoga: { emo: "🧘", label: "Yoga" },
+  strength: { emo: "🏋️", label: "Strength" }, pilates: { emo: "🩰", label: "Pilates" }, hiit: { emo: "⚡", label: "HIIT" }, yoga: { emo: "🧘", label: "Yoga" },
   stretching: { emo: "🤸", label: "Stretch" }, rowing: { emo: "🚣", label: "Rowing" }, swimming: { emo: "🏊", label: "Swim" },
   other: { emo: "💪", label: "Other" },
 };
@@ -325,6 +325,13 @@ function renderToday() {
       ${macro("🥩", "Protein", tot.p, tg.protein, "protein")}
       ${macro("🍞", "Carbs", tot.c, tg.carbs, "carbs")}
       ${macro("🥑", "Fat", tot.f, tg.fat, "fat")}
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>🧑‍🍳 Food coach</h2><span class="meta">by Claude</span></div>
+      <div class="btn-row">
+        <button class="btn secondary" data-act="coach-ideas">💡 What should I eat?</button>
+        <button class="btn secondary" data-act="coach-review">📋 How am I eating?</button>
+      </div>
     </div>
     ${meals}
     <div class="card">
@@ -1216,6 +1223,162 @@ $("#photoInput").addEventListener("change", async (e) => {
 });
 
 /* =========================================================
+   Food coach (Claude)
+   ========================================================= */
+const MOODS = ["Quick & easy", "High protein", "Sweet tooth", "Comfort food", "Eating out", "Meal prep", "Vegetarian", "Snack"];
+let ideas = null; // { moods:Set, request, loading, error, data, meal }
+
+function todayContext() {
+  const p = P();
+  const tg = dayGoal(today());
+  const day = dayData(today());
+  const tot = totals(day.entries);
+  const h = new Date().getHours();
+  return [
+    `Goal: ${tg.direction} weight (${fmtW(latestWeightKg(), 0)} now, goal ${fmtW(p.goalWeightKg, 0)}).`,
+    `Daily targets: ${tg.kcal} kcal, ${tg.protein} g protein, ${tg.carbs} g carbs, ${tg.fat} g fat.`,
+    `Eaten so far today: ${r0(tot.kcal)} kcal, ${r0(tot.p)} g protein, ${r0(tot.c)} g carbs, ${r0(tot.f)} g fat${day.entries.length ? ` (${day.entries.map((e) => e.name).join(", ")})` : ""}.`,
+    `Remaining today: ${r0(tg.kcal - tot.kcal)} kcal, ${r0(tg.protein - tot.p)} g protein, ${r0(tg.carbs - tot.c)} g carbs, ${r0(tg.fat - tot.f)} g fat.`,
+    `Local time: ${h}:00 (${h < 11 ? "morning" : h < 15 ? "midday" : h < 20 ? "evening" : "late night"}).`,
+    p.foodPrefs ? `My food preferences and dislikes: ${p.foodPrefs}` : "",
+  ].filter(Boolean).join("\n");
+}
+
+function weekContext() {
+  const p = P();
+  const tg = computeTargets();
+  const lines = [
+    `Goal: ${tg.direction} weight (${fmtW(latestWeightKg(), 0)} now, goal ${fmtW(p.goalWeightKg, 0)}).`,
+    `Daily targets: ${tg.kcal} kcal, ${tg.protein} g protein, ${tg.carbs} g carbs, ${tg.fat} g fat.`,
+    p.foodPrefs ? `Preferences and dislikes: ${p.foodPrefs}` : "",
+    "",
+  ];
+  for (let i = 6; i >= 0; i--) {
+    const d = addDays(today(), -i);
+    const es = dayData(d).entries;
+    const t = totals(es);
+    const label = parseYmd(d).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+    lines.push(es.length
+      ? `${label}: ${r0(t.kcal)} kcal, P ${r0(t.p)} g, C ${r0(t.c)} g, F ${r0(t.f)} g — ${es.map((e) => `${e.meal}: ${e.name} (${r0(e.kcal * (e.servings || 1))} kcal)`).join("; ")}`
+      : `${label}: nothing logged`);
+  }
+  return lines.filter((l, i) => l || i === 3).join("\n");
+}
+
+function openIdeas() {
+  ideas = { moods: new Set(), request: "", loading: false, error: null, data: null, meal: defaultMeal() };
+  renderIdeas();
+}
+
+function renderIdeas() {
+  const p = P();
+  let body;
+  if (!state.apiKey) {
+    body = `<div class="note">The food coach uses Claude. Add your Anthropic API key once in <b>Settings → API key</b>.</div><button class="btn" data-act="edit-ai">Set up Claude</button>`;
+  } else if (ideas.loading) {
+    body = `<div class="empty"><div class="spinner"></div>Cooking up ideas…</div>`;
+  } else if (!ideas.data) {
+    const tg = dayGoal(today()); const tot = totals(dayData(today()).entries);
+    body = `<div class="note">You have <b>${r0(tg.kcal - tot.kcal)} kcal</b> and <b>${r0(tg.protein - tot.p)} g protein</b> left today. Claude will suggest food that fits.</div>
+      <div style="font-weight:600;margin:4px 2px 8px">In the mood for…</div>
+      <div class="chips" style="margin-bottom:12px">${MOODS.map((m) => `<button class="chip ${ideas.moods.has(m) ? "on" : ""}" data-act="mood" data-v="${m}">${m}</button>`).join("")}</div>
+      <label class="field"><span>Anything else? (optional)</span><input id="ideaReq" class="input" value="${esc(ideas.request)}" placeholder="e.g. something with chicken, under 15 minutes"></label>
+      <label class="field"><span>Foods you love or avoid (remembered)</span><textarea id="foodPrefs" rows="2" placeholder="e.g. no mushrooms, loves Mexican food, lactose intolerant">${esc(p.foodPrefs || "")}</textarea></label>
+      ${ideas.error ? `<div class="note warn">${esc(ideas.error)}</div>` : ""}
+      <button class="btn" data-act="run-ideas">💡 Get ideas</button>`;
+  } else {
+    body = `<div class="note">${esc(ideas.data.intro)}</div>
+      <div class="seg">${MEALS.map((m) => `<button class="${ideas.meal === m ? "on" : ""}" data-act="idea-meal" data-v="${m}">${m}</button>`).join("")}</div>
+      ${ideas.data.ideas.map((it, i) => `<div class="ai-item idea">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline"><b style="font-size:16px">${esc(it.name)}</b><span class="num" style="font-weight:700;white-space:nowrap">${it.kcal} kcal</span></div>
+        <div class="small muted" style="margin:2px 0 6px">${esc(it.portion)} · <span style="color:var(--protein)">P ${r0(it.p)}</span> · <span style="color:var(--carbs)">C ${r0(it.c)}</span> · <span style="color:var(--fat)">F ${r0(it.f)}</span></div>
+        <div class="small" style="margin-bottom:8px">${esc(it.why)}</div>
+        <details class="small"><summary style="color:var(--accent);font-weight:600;cursor:pointer">Ingredients & how to make it</summary>
+          <ul style="margin:6px 0;padding-left:18px">${it.ingredients.map((x) => `<li>${esc(x)}</li>`).join("")}</ul><p style="margin:0">${esc(it.how)}</p></details>
+        <button class="btn" style="margin-top:10px;padding:10px" data-act="idea-add" data-i="${i}">+ Log to ${ideas.meal}</button>
+      </div>`).join("")}
+      <button class="btn secondary" data-act="idea-again">More ideas</button>`;
+  }
+  const html = `${sheetTitle("What should I eat?")}${body}`;
+  if ($("#sheet").hidden) openSheet(html, () => (ideas = null));
+  else $("#sheetBody").innerHTML = html;
+}
+
+async function runIdeas() {
+  const p = P();
+  ideas.request = $("#ideaReq")?.value.trim() ?? ideas.request;
+  const prefs = $("#foodPrefs");
+  if (prefs) { p.foodPrefs = prefs.value.trim(); save(); }
+  ideas.loading = true; ideas.error = null;
+  renderIdeas();
+  try {
+    const want = [...ideas.moods, ideas.request].filter(Boolean).join(", ");
+    const data = await suggestMeals({ apiKey: state.apiKey, model: state.model || DEFAULT_MODEL, context: todayContext(), request: want });
+    if (!ideas) return;
+    ideas.data = data;
+  } catch (err) {
+    if (!ideas) return;
+    ideas.error = err.message;
+  }
+  ideas.loading = false;
+  renderIdeas();
+}
+
+let review = null; // { loading, error }
+function openReview(fresh = false) {
+  const p = P();
+  review = { loading: false, error: null };
+  if (fresh || !p.lastReview) { renderReview(); runReview(); }
+  else renderReview();
+}
+
+function renderReview() {
+  const p = P();
+  const r = p.lastReview?.data;
+  const V = { great: ["🌟", "Great"], good: ["👍", "Good"], mixed: ["🙂", "Mixed"], needs_work: ["💪", "Room to grow"], not_enough_data: ["📝", "Need more logs"] };
+  let body;
+  if (!state.apiKey) {
+    body = `<div class="note">The food coach uses Claude. Add your Anthropic API key once in <b>Settings → API key</b>.</div><button class="btn" data-act="edit-ai">Set up Claude</button>`;
+  } else if (review.loading) {
+    body = `<div class="empty"><div class="spinner"></div>Reading your last 7 days…</div>`;
+  } else if (!r) {
+    body = `${review.error ? `<div class="note warn">${esc(review.error)}</div>` : ""}<button class="btn" data-act="review-again">Review my week</button>`;
+  } else {
+    const [emo, lbl] = V[r.verdict] || V.mixed;
+    const list = (title, items) => items?.length ? `<h3 style="margin:14px 2px 6px">${title}</h3><div class="card" style="padding:12px 16px"><ul style="margin:0;padding-left:18px;display:grid;gap:6px">${items.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>` : "";
+    body = `<div class="hero" style="margin-bottom:6px"><div class="hero-top"><h2>${emo} ${esc(r.headline)}</h2><span class="streak">${lbl}</span></div>
+        <div class="small muted">Based on ${parseYmd(p.lastReview.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })} and the 6 days before</div></div>
+      ${review.error ? `<div class="note warn">${esc(review.error)}</div>` : ""}
+      ${list("✅ Going well", r.wins)}
+      ${list("🎯 Focus this week", r.focus)}
+      ${r.swaps?.length ? `<h3 style="margin:14px 2px 6px">🔄 Easy swaps</h3>${r.swaps.map((s) => `<div class="ai-item"><div class="small muted" style="text-decoration:line-through">${esc(s.instead_of)}</div><div style="font-weight:700">→ ${esc(s.try)}</div><div class="small muted">${esc(s.why)}</div></div>`).join("")}` : ""}
+      ${list("🛒 Grocery list", r.grocery_list)}
+      <br><button class="btn secondary" data-act="review-again">Refresh review</button>
+      <p class="hint" style="text-align:center">Claude's suggestions are general guidance, not medical advice.</p>`;
+  }
+  const html = `${sheetTitle("How am I eating?")}${body}`;
+  if ($("#sheet").hidden) openSheet(html, () => (review = null));
+  else $("#sheetBody").innerHTML = html;
+}
+
+async function runReview() {
+  if (!state.apiKey) return;
+  const p = P();
+  review.loading = true; review.error = null;
+  renderReview();
+  try {
+    const data = await reviewEating({ apiKey: state.apiKey, model: state.model || DEFAULT_MODEL, context: weekContext() });
+    p.lastReview = { date: today(), data };
+    save();
+  } catch (err) {
+    if (review) review.error = err.message;
+  }
+  if (!review) return;
+  review.loading = false;
+  renderReview();
+}
+
+/* =========================================================
    Fitness
    ========================================================= */
 function renderFitness() {
@@ -1522,6 +1685,22 @@ document.addEventListener("click", (ev) => {
     case "coach-pace": coach.paceKg = Number(v); coach.override = 0; renderCoach(); break;
     case "coach-preset": coach.preset = v; renderCoach(); break;
     case "coach-save": saveCoach(); break;
+    case "coach-ideas": openIdeas(); break;
+    case "mood": ideas.moods.has(v) ? ideas.moods.delete(v) : ideas.moods.add(v); t.classList.toggle("on"); break;
+    case "run-ideas": runIdeas(); break;
+    case "idea-meal": ideas.meal = v; renderIdeas(); break;
+    case "idea-again": ideas.data = null; renderIdeas(); break;
+    case "idea-add": {
+      const it = ideas.data.ideas[Number(t.dataset.i)];
+      currentDay = today();
+      addState = { meal: ideas.meal };
+      addEntry({ name: it.name, portion: it.portion, kcal: it.kcal, p: it.p, c: it.c, f: it.f, servings: 1 }, { ai: true });
+      addState = null;
+      render(); toast(`${it.name} added to ${ideas.meal} ✨`);
+      break;
+    }
+    case "coach-review": openReview(false); break;
+    case "review-again": runReview(); break;
     case "pick-meal": addState.meal = v; renderAdd(); break;
     case "add-mode": syncAiEdits(); addState.mode = v; renderAdd(); break;
     case "add-food": {
