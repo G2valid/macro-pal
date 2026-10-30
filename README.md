@@ -10,6 +10,9 @@ A calorie and macro tracker that runs as an installable web app (PWA) on iPhone,
 - Weight log with a 7-day trend chart, plus a weekly weigh-in day whose number is highlighted with week-over-week change.
 - Fitness tab: workouts, steps, sleep, resting HR and HRV. Import Peloton, RingConn or other screenshots and Claude fills them in. Workout calories can optionally be added to the food goal.
 - 10 gradient themes, a daily greeting with a logging streak, and confetti when you hit your protein goal.
+- Personal records (best output, distance, duration, calories, steps) and a weekly workouts/active-minutes goal.
+- Private body measurements, progress photos (stored in IndexedDB) and optional cycle tracking. These are never shared.
+- Claude food coach: meal ideas for what's left today, a weekly eating review, and strict dietary needs such as gluten-free.
 - Several people per device, each with their own theme (7 colors plus light, dark or match phone).
 - Backup/restore to a JSON file. Works offline, except photo estimates.
 
@@ -32,3 +35,6 @@ Create an API key at console.anthropic.com and paste it into Settings → Photo 
 - `sw.js`: offline cache. Bump `VERSION` when you change files.
 
 Data lives in the browser's localStorage on each device. Two phones don't sync with each other.
+
+## Partner link (in progress)
+`supabase/schema.sql` creates the tables for linking two people, challenges and cheers, with row-level security. Only a small daily summary is shared; food logs, measurements, photos and cycle data stay on the device.

@@ -315,6 +315,7 @@ function renderToday() {
           ${tg.bonus ? `<div><span class="muted">incl. exercise</span><b>+${tg.bonus}</b></div>` : ""}
           <div><span class="muted">Eaten</span><b>${r0(tot.kcal)}</b></div>
           <div><span class="muted">${over ? "Over" : "Remaining"}</span><b>${r0(Math.abs(remaining))}</b></div>
+          ${(() => { const ci = isToday && cycleInfo(); return ci ? `<div><span class="goal-chip">${PHASES[ci.phase][0]} Cycle day ${ci.day}</span></div>` : ""; })()}
           <div><span class="goal-chip">${tg.direction === "lose" ? "📉 Losing" : tg.direction === "gain" ? "📈 Gaining" : "⚖️ Maintaining"} · ${fmtW(latestWeightKg(), 0)} → ${fmtW(p.goalWeightKg, 0)}</span></div>
         </div>
       </div>
@@ -532,6 +533,7 @@ function renderProgress() {
       ${lastW ? `<div class="wk-hero"><div><div class="v">${toDispW(lastW.kg).toFixed(1)} <span class="small muted">${wUnit()}</span></div>
           <div class="small muted">${parseYmd(lastW.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}${prevW ? " · vs last week" : " · your first weekly number"}</div></div>
           ${prevW ? deltaChip(lastW.kg - prevW.kg) : ""}</div>
+        ${(() => { const ci = cycleInfo(lastW.date); return ci && (ci.phase === "pre" || ci.phase === "period") && prevW && lastW.kg > prevW.kg ? `<div class="note small" style="margin:10px 0 0">🌸 This weigh-in fell ${ci.phase === "pre" ? "right before" : "during"} your period, so some of that is likely water weight.</div>` : ""; })()}
         <div class="weigh-list" style="margin-top:10px">${[...weekly].reverse().slice(1, 9).map((w, i, arr) => {
           const older = weekly[weekly.length - 3 - i];
           return `<div class="wl"><span>${parseYmd(w.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span><span><b class="num">${fmtW(w.kg)}</b> ${older ? deltaChip(w.kg - older.kg) : ""}</span></div>`;
@@ -539,6 +541,7 @@ function renderProgress() {
       : `<div class="empty">Weigh in on ${WEEKDAYS[wd]}s — that number becomes your official weekly check-in. Daily weigh-ins still feed the trend line.</div>`}
     </div>
 
+    ${renderCycle()}
     <div class="card">
       <div class="card-head"><h2>📈 Weight trend</h2><button class="pill-btn" data-act="log-weight">+ Weigh in</button></div>
       ${weightChart(pts, p.goalWeightKg)}
@@ -551,6 +554,7 @@ function renderProgress() {
       </div>
       <div class="small muted" style="margin-top:8px">${logged.length} of 7 days logged · ${onTarget} within 10% of your ${tg.kcal} kcal goal (dashed line)</div>
     </div>
+    ${renderBody()}
     <div class="card">
       <div class="card-head"><h2>All weigh-ins</h2></div>
       <div class="weigh-list">${
@@ -563,6 +567,7 @@ function renderProgress() {
       }</div>
     </div>`;
   bindChartHover();
+  loadPhotoGrid();
 }
 
 /* =========================================================
@@ -592,6 +597,7 @@ function renderSettings() {
       <button data-act="edit-macros"><span>🥩 Calories & macros</span><span class="v">${macroLabel} ›</span></button>
       <button data-act="edit-weighday"><span>⭐ Weekly weigh-in day</span><span class="v">${WEEKDAYS[p.weighDay ?? 1]} ›</span></button>
       <button data-act="edit-diet"><span>🌾 Dietary needs</span><span class="v">${(p.diet || []).length ? esc(p.diet.join(", ")) : "None"} ›</span></button>
+      <button data-act="toggle-cycle"><span>🌸 Cycle tracking</span><span class="v">${p.cycle?.enabled ? "On 🔒" : "Off"} ›</span></button>
       <button data-act="edit-water"><span>💧 Water goal</span><span class="v">${p.waterGoal || 8} cups ›</span></button>
       <button data-act="edit-fitness-goals"><span>👟 Steps & exercise</span><span class="v">${(p.stepGoal || 8000).toLocaleString()} steps ›</span></button>
     </div>
@@ -1388,6 +1394,85 @@ async function runReview() {
 /* =========================================================
    Fitness
    ========================================================= */
+/* ---------- Personal records & weekly goal ---------- */
+const MI = 1.609344;
+function weekStart(date = currentDay) {
+  const d = parseYmd(date);
+  const back = (d.getDay() + 6) % 7; // Monday = 0
+  return addDays(date, -back);
+}
+function weekTotals(date = currentDay, p = P()) {
+  const start = weekStart(date);
+  let workouts = 0, minutes = 0;
+  for (let i = 0; i < 7; i++) {
+    const ws = p.days?.[addDays(start, i)]?.workouts || [];
+    workouts += ws.length;
+    minutes += ws.reduce((t, w) => t + (w.minutes || 0), 0);
+  }
+  return { start, workouts, minutes };
+}
+const weeklyGoal = (p = P()) => ({ workouts: p.weeklyGoal?.workouts ?? 4, minutes: p.weeklyGoal?.minutes ?? 150 });
+
+/** Best values across all history, keyed so we can spot new records. */
+function recordMap(p = P()) {
+  const rec = {};
+  const bump = (key, value, info) => { if (value > 0 && (!rec[key] || value > rec[key].value)) rec[key] = { value, ...info }; };
+  for (const [date, day] of Object.entries(p.days || {})) {
+    for (const w of day.workouts || []) {
+      const info = { date, type: w.type, title: w.title };
+      bump(`out:${w.type}`, w.output || 0, info);
+      bump(`min:${w.type}`, w.minutes || 0, info);
+      bump(`kcal:${w.type}`, w.kcal || 0, info);
+      const mi = w.distance ? (w.distUnit === "km" ? w.distance / MI : w.distance) : 0;
+      bump(`dist:${w.type}`, mi, info);
+    }
+    bump("steps", day.activity?.steps || 0, { date });
+  }
+  return rec;
+}
+function recordLabel(key, r) {
+  const [kind] = key.split(":");
+  const dist = imperial() ? `${r1(r.value)} mi` : `${r1(r.value * MI)} km`;
+  return { out: `${r.value} kJ output`, min: `${r.value} min`, kcal: `${r.value} kcal`, dist, steps: `${r.value.toLocaleString()} steps` }[kind];
+}
+const fitSnapshot = () => ({ rec: recordMap(), week: weekTotals(currentDay) });
+
+/** Celebrate new personal records and a newly reached weekly goal. */
+function celebrateFitness(before, date = currentDay) {
+  const after = recordMap();
+  const wins = [];
+  for (const [k, r] of Object.entries(after)) {
+    const old = before.rec[k];
+    if (old && r.value > old.value) {
+      const t = k === "steps" ? "👟" : (WORKOUTS[r.type] || WORKOUTS.other).emo;
+      wins.push(`${t} ${recordLabel(k, r)}`);
+    }
+  }
+  const goal = weeklyGoal();
+  const wk = weekTotals(date);
+  const hitGoal = wk.start === before.week.start &&
+    ((before.week.workouts < goal.workouts && wk.workouts >= goal.workouts) || (before.week.minutes < goal.minutes && wk.minutes >= goal.minutes));
+  if (wins.length || hitGoal) {
+    confetti();
+    setTimeout(() => toast(wins.length ? `🏆 New PR! ${wins[0]}` : "🎯 Weekly activity goal reached!"), 300);
+  }
+}
+
+function miniRing(val, goal, label, sub) {
+  const C = 2 * Math.PI * 30;
+  const pct = Math.min(1, val / (goal || 1));
+  return `<div style="display:grid;justify-items:center;gap:4px">
+    <div class="ring" style="width:84px;height:84px">
+      <svg viewBox="0 0 76 76" aria-hidden="true">
+        <circle class="track" cx="38" cy="38" r="30" fill="none" stroke-width="9"/>
+        <circle class="prog" cx="38" cy="38" r="30" fill="none" stroke-width="9" stroke-linecap="round" stroke="url(#stepsGrad)" style="stroke:url(#stepsGrad)" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - pct)}"/>
+      </svg>
+      <div class="ring-center"><div class="big num" style="font-size:20px">${val}</div><div class="lbl" style="font-size:10px;text-transform:none;letter-spacing:0">of ${goal}</div></div>
+    </div>
+    <div style="font-weight:700;font-size:13px">${label}</div>${sub ? `<div class="small muted">${sub}</div>` : ""}
+  </div>`;
+}
+
 function renderFitness() {
   const p = P();
   const day = dayData();
@@ -1416,6 +1501,14 @@ function renderFitness() {
       <button class="btn" data-act="open-import">📸 Import screenshot</button>
       <button class="btn secondary" data-act="open-workout">+ Log workout</button>
     </div>
+    ${(() => {
+      const g = weeklyGoal(); const wk = weekTotals();
+      const done = wk.workouts >= g.workouts && wk.minutes >= g.minutes;
+      return `<div class="card">
+        <div class="card-head"><h2>🎯 This week</h2><span class="meta">${done ? "Goal smashed! 🎉" : `${parseYmd(wk.start).toLocaleDateString(undefined, { month: "short", day: "numeric" })} – ${parseYmd(addDays(wk.start, 6)).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`}</span></div>
+        <div style="display:flex;justify-content:space-around">${miniRing(wk.workouts, g.workouts, "Workouts")}${miniRing(wk.minutes, g.minutes, "Active minutes")}</div>
+      </div>`;
+    })()}
     <div class="card">
       <div class="card-head"><h2>👟 Activity</h2><button class="pill-btn" data-act="open-activity">Edit</button></div>
       <div class="act-grid">
@@ -1446,6 +1539,20 @@ function renderFitness() {
       }).join("") : `<div class="empty">No workouts logged ${currentDay === today() ? "today" : "this day"}. Import a Peloton or RingConn screenshot, or log one by hand.</div>`}
       ${ws.length && (P().eatBack || 0) > 0 ? `<p class="small muted" style="margin:8px 0 0">${P().eatBack === 1 ? "All" : "Half"} of these calories are added to today's food goal.</p>` : ""}
     </div>
+    ${(() => {
+      const rec = recordMap();
+      const types = [...new Set(Object.keys(rec).filter((k) => k.includes(":")).map((k) => k.split(":")[1]))];
+      if (!types.length && !rec.steps) return "";
+      return `<div class="card">
+        <div class="card-head"><h2>🏆 Personal records</h2></div>
+        ${types.map((t) => {
+          const W = WORKOUTS[t] || WORKOUTS.other;
+          const bits = ["out", "dist", "min", "kcal"].filter((k) => rec[`${k}:${t}`]).map((k) => `<b class="num">${recordLabel(`${k}:${t}`, rec[`${k}:${t}`])}</b>`).join(" · ");
+          return `<div class="workout" style="cursor:default"><span class="wico">${W.emo}</span><div class="grow"><div class="nm">${W.label}</div><div class="sub" style="white-space:normal">${bits}</div></div></div>`;
+        }).join("")}
+        ${rec.steps ? `<div class="workout" style="cursor:default"><span class="wico">👟</span><div class="grow"><div class="nm">Most steps in a day</div><div class="sub"><b class="num">${rec.steps.value.toLocaleString()}</b> · ${parseYmd(rec.steps.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</div></div></div>` : ""}
+      </div>`;
+    })()}
     <div class="card">
       <div class="card-head"><h2>📅 Last 7 days</h2><span class="meta num">avg ${Math.round(avgSteps).toLocaleString()} steps</span></div>
       <div class="mini-bars">${bars}</div>
@@ -1496,9 +1603,11 @@ function openWorkout(id) {
       type: wDraft.type, title: f.title.trim(), minutes: Number(f.minutes) || 0, kcal: Number(f.kcal) || 0,
       distance: Number(f.distance) || 0, distUnit: f.distUnit, avgHr: Number(f.avgHr) || 0, output: Number(f.output) || 0, notes: f.notes.trim(),
     };
+    const snap = fitSnapshot();
     if (w) Object.assign(w, rec);
     else day.workouts.push({ id: uid(), source: "manual", ...rec });
     save(); closeSheet(); render(); toast(w ? "Saved" : "Workout logged 💪");
+    celebrateFitness(snap);
   });
 }
 
@@ -1523,8 +1632,10 @@ function openActivity() {
   $("#actForm").addEventListener("submit", (e) => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target));
+    const snap = fitSnapshot();
     day.activity = Object.fromEntries(Object.entries(f).map(([k, x]) => [k, Number(x) || 0]));
     save(); closeSheet(); render(); toast("Saved");
+    celebrateFitness(snap);
   });
 }
 
@@ -1604,6 +1715,7 @@ function saveShots() {
   const date = r.date || currentDay;
   const day = ensureDay(date);
   day.workouts ||= [];
+  const snap = { rec: recordMap(), week: weekTotals(date) };
   let added = 0;
   for (const w of r.workouts) {
     const dup = day.workouts.some((x) => (x.title || "") === (w.title || "") && x.minutes === w.minutes && x.kcal === w.kcal);
@@ -1614,7 +1726,7 @@ function saveShots() {
   save(); closeSheet();
   currentDay = date; tab = "fitness"; render();
   toast(added ? `Logged ${added} workout${added > 1 ? "s" : ""} 💪` : "Daily stats saved");
-  if (added) confetti();
+  celebrateFitness(snap, date);
 }
 
 $("#shotInput").addEventListener("change", async (e) => {
@@ -1650,6 +1762,11 @@ function openFitnessGoals() {
   openSheet(`${sheetTitle("Steps & exercise")}
     <form id="fgForm">
       <label class="field"><span>Daily step goal</span><input name="steps" type="number" inputmode="numeric" min="1000" step="500" value="${p.stepGoal || 8000}"></label>
+      <div class="row2">
+        <label class="field"><span>Workouts per week</span><input name="wkWorkouts" type="number" inputmode="numeric" min="1" max="14" value="${weeklyGoal().workouts}"></label>
+        <label class="field"><span>Active minutes per week</span><input name="wkMinutes" type="number" inputmode="numeric" min="10" step="10" value="${weeklyGoal().minutes}"></label>
+      </div>
+      <p class="hint" style="margin-top:-6px">150 minutes a week is the common health guideline. Weeks run Monday to Sunday.</p>
       <label class="field"><span>Add workout calories to my food goal?</span></label>
       <div class="seg">${[[0, "Off"], [0.5, "Half"], [1, "All"]].map(([v, l]) => `<button type="button" class="${(p.eatBack || 0) === v ? "on" : ""}" data-act="eatback" data-v="${v}">${l}</button>`).join("")}</div>
       <p class="hint" style="margin-top:-6px">Your activity level already counts typical exercise, so <b>Off</b> is the safe default. <b>Half</b> is a good middle ground on big workout days — trackers tend to overestimate calories burned.</p>
@@ -1658,7 +1775,199 @@ function openFitnessGoals() {
   $("#fgForm").addEventListener("submit", (e) => {
     e.preventDefault();
     p.stepGoal = Math.max(1000, Number(e.target.steps.value) || 8000);
+    p.weeklyGoal = { workouts: Math.max(1, Number(e.target.wkWorkouts.value) || 4), minutes: Math.max(10, Number(e.target.wkMinutes.value) || 150) };
     save(); closeSheet(); render();
+  });
+}
+
+/* =========================================================
+   Private: body measurements, progress photos, cycle
+   (stored only on this device and never shared)
+   ========================================================= */
+const MEASURES = [["waist", "Waist"], ["hips", "Hips"], ["chest", "Chest"], ["arm", "Arm"], ["thigh", "Thigh"], ["bodyFat", "Body fat %"]];
+const lenUnit = () => (imperial() ? "in" : "cm");
+
+function renderBody() {
+  const p = P();
+  const ms = [...(p.measurements || [])].sort((a, b) => a.date.localeCompare(b.date));
+  const first = ms[0], last = ms[ms.length - 1];
+  const row = ([k, label]) => {
+    const latest = [...ms].reverse().find((m) => m[k]);
+    const earliest = ms.find((m) => m[k]);
+    if (!latest) return "";
+    const unit = k === "bodyFat" ? "%" : ` ${lenUnit()}`;
+    const v = k === "bodyFat" ? latest[k] : imperial() ? latest[k] : latest[k] * 2.54;
+    const d = earliest && earliest !== latest ? latest[k] - earliest[k] : null;
+    const dv = d == null ? "" : k === "bodyFat" ? r1(d) : imperial() ? r1(d) : r1(d * 2.54);
+    return `<div class="wl"><span>${label}</span><span><b class="num">${r1(v)}${unit}</b> ${d == null || !d ? "" : `<span class="delta ${d < 0 ? "good" : ""}">${d < 0 ? "▼" : "▲"} ${Math.abs(dv)}</span>`}</span></div>`;
+  };
+  return `<div class="card">
+    <div class="card-head"><h2>📏 Body</h2><span class="meta">🔒 Private</span></div>
+    ${ms.length ? `<div class="weigh-list">${MEASURES.map(row).join("")}</div>
+      <p class="small muted" style="margin:6px 0 10px">${ms.length > 1 ? `Change since ${parseYmd(first.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : `Measured ${parseYmd(last.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`}</p>`
+      : `<p class="small muted" style="margin-top:0">The scale can stall while your waist shrinks. Measure every 2–4 weeks to see the full picture.</p>`}
+    <div class="btn-row"><button class="btn secondary" data-act="add-measure">+ Measurements</button><button class="btn secondary" data-act="add-photo">📸 Add photo</button></div>
+    <div id="photoGrid"></div>
+  </div>`;
+}
+
+function openMeasure() {
+  const p = P();
+  const ms = [...(p.measurements || [])].sort((a, b) => a.date.localeCompare(b.date));
+  const last = ms[ms.length - 1] || {};
+  const disp = (k) => (last[k] ? (k === "bodyFat" || imperial() ? r1(last[k]) : r1(last[k] * 2.54)) : "");
+  openSheet(`${sheetTitle("Measurements")}
+    <p class="small muted" style="margin-top:0">🔒 Only stored on this phone. Measure at the same spot each time, relaxed, first thing in the morning.</p>
+    <form id="msForm">
+      <label class="field"><span>Date</span><input type="date" name="date" value="${today()}" max="${today()}"></label>
+      <div class="row2">${MEASURES.map(([k, l]) => `<label class="field"><span>${l}${k === "bodyFat" ? "" : ` (${lenUnit()})`}</span><input name="${k}" type="number" inputmode="decimal" step="0.1" min="0" placeholder="${disp(k)}"></label>`).join("")}</div>
+      <p class="hint">Leave blank anything you didn't measure. Last values are shown faintly.</p>
+      <button class="btn">Save</button>
+    </form>`);
+  $("#msForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target));
+    const rec = { date: f.date || today() };
+    for (const [k] of MEASURES) {
+      const v = Number(f[k]);
+      if (v > 0) rec[k] = k === "bodyFat" || imperial() ? v : v / 2.54; // stored in inches
+    }
+    if (Object.keys(rec).length < 2) return toast("Enter at least one measurement.");
+    p.measurements = (p.measurements || []).filter((m) => m.date !== rec.date);
+    p.measurements.push(rec);
+    save(); closeSheet(); render(); toast("Measurements saved 📏");
+  });
+}
+
+/* Progress photos live in IndexedDB (too big for localStorage). */
+const PHOTO_DB = "macropal-photos";
+function photoDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(PHOTO_DB, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore("photos", { keyPath: "id" }).createIndex("profile", "profileId");
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function photoTx(mode, fn) {
+  const db = await photoDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("photos", mode);
+    const out = fn(tx.objectStore("photos"));
+    tx.oncomplete = () => resolve(out?.result ?? out);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+const listPhotos = (profileId) => photoTx("readonly", (st) => st.index("profile").getAll(profileId));
+const putPhoto = (rec) => photoTx("readwrite", (st) => st.put(rec));
+const deletePhoto = (id) => photoTx("readwrite", (st) => st.delete(id));
+const photoUrls = [];
+
+async function loadPhotoGrid() {
+  const grid = $("#photoGrid");
+  if (!grid) return;
+  let photos = [];
+  try { photos = await listPhotos(P().id); } catch { return; }
+  photoUrls.splice(0).forEach((u) => URL.revokeObjectURL(u));
+  photos.sort((a, b) => b.date.localeCompare(a.date));
+  if (!photos.length) { grid.innerHTML = ""; return; }
+  const url = (ph) => { const u = URL.createObjectURL(ph.blob); photoUrls.push(u); return u; };
+  grid.innerHTML = `<div class="photo-grid">${photos.slice(0, 9).map((ph) => `<button data-act="view-photo" data-id="${ph.id}"><img src="${url(ph)}" alt="Progress photo ${ph.date}"><span>${parseYmd(ph.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span></button>`).join("")}</div>
+    ${photos.length > 1 ? `<button class="btn secondary" style="margin-top:10px" data-act="compare-photos">↔️ Compare first & latest</button>` : ""}`;
+}
+
+async function addProgressPhoto(file) {
+  const { dataUrl } = await prepareImage(file);
+  const blob = await (await fetch(dataUrl)).blob();
+  await putPhoto({ id: uid(), profileId: P().id, date: today(), blob });
+  render(); toast("Photo saved 🔒");
+}
+
+async function viewPhoto(id) {
+  const photos = await listPhotos(P().id);
+  const ph = photos.find((x) => x.id === id);
+  if (!ph) return;
+  const u = URL.createObjectURL(ph.blob);
+  openSheet(`${sheetTitle(parseYmd(ph.date).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }))}
+    <img src="${u}" alt="" style="width:100%;border-radius:16px;display:block;margin-bottom:12px">
+    <button class="btn danger" data-act="del-photo" data-id="${id}">Delete photo</button>`, () => URL.revokeObjectURL(u));
+}
+
+async function comparePhotos() {
+  const photos = (await listPhotos(P().id)).sort((a, b) => a.date.localeCompare(b.date));
+  const a = photos[0], b = photos[photos.length - 1];
+  const ua = URL.createObjectURL(a.blob), ub = URL.createObjectURL(b.blob);
+  const lbl = (ph) => parseYmd(ph.date).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  openSheet(`${sheetTitle("Then & now")}
+    <div class="compare"><figure><img src="${ua}" alt=""><figcaption>${lbl(a)}</figcaption></figure><figure><img src="${ub}" alt=""><figcaption>${lbl(b)}</figcaption></figure></div>`,
+    () => { URL.revokeObjectURL(ua); URL.revokeObjectURL(ub); });
+}
+
+$("#progressPhotoInput").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (file) addProgressPhoto(file).catch(() => toast("Couldn't save that photo."));
+});
+
+/* ---------- Cycle tracking ---------- */
+function cycleInfo(date = today(), p = P()) {
+  const c = p.cycle;
+  if (!c?.enabled || !c.starts?.length) return null;
+  const starts = [...c.starts].sort();
+  const past = starts.filter((s) => s <= date);
+  if (!past.length) return null;
+  const gaps = starts.slice(1).map((s, i) => (parseYmd(s) - parseYmd(starts[i])) / 864e5).filter((g) => g >= 18 && g <= 45).slice(-6);
+  const avg = gaps.length ? Math.round(gaps.reduce((x, y) => x + y, 0) / gaps.length) : 28;
+  const last = past[past.length - 1];
+  const day = Math.round((parseYmd(date) - parseYmd(last)) / 864e5) + 1;
+  const next = addDays(last, avg);
+  const toNext = Math.round((parseYmd(next) - parseYmd(date)) / 864e5);
+  const periodLen = c.periodLen || 5;
+  let phase = "follicular";
+  if (day <= periodLen) phase = "period";
+  else if (Math.abs(day - (avg - 14)) <= 1) phase = "ovulation";
+  else if (day > avg - 14) phase = toNext <= 5 ? "pre" : "luteal";
+  return { day, avg, next, toNext, phase, last };
+}
+const PHASES = {
+  period: ["🌸", "Period", "Water weight and cravings are normal. Go easy on yourself."],
+  follicular: ["🌱", "Follicular", "Energy usually rises. A great time to push workouts."],
+  ovulation: ["✨", "Ovulation window", "Often peak energy and strength."],
+  luteal: ["🌙", "Luteal", "Appetite can rise a bit. Extra protein and fiber help."],
+  pre: ["🌧️", "Pre-period", "The scale often jumps 1–3 lb now. That's water, not fat."],
+};
+
+function renderCycle() {
+  const p = P();
+  if (!p.cycle?.enabled) return "";
+  const ci = cycleInfo();
+  const [emo, name, tip] = ci ? PHASES[ci.phase] : ["🌸", "Cycle", ""];
+  return `<div class="card">
+    <div class="card-head"><h2>${emo} Cycle</h2><span class="meta">🔒 Private</span></div>
+    ${ci ? `<div class="wk-hero"><div><div class="v">Day ${ci.day}</div><div class="small muted">${name} · next period ${ci.toNext > 0 ? `in ~${ci.toNext} days` : ci.toNext === 0 ? "expected today" : `${-ci.toNext} days late`}</div></div></div>
+      <div class="note small" style="margin:10px 0">${tip}</div>` : `<p class="small muted" style="margin-top:0">Log the first day of your period to start predictions.</p>`}
+    <button class="btn secondary" data-act="cycle-sheet">🌸 Log period / history</button>
+  </div>`;
+}
+
+function openCycle() {
+  const p = P();
+  const c = (p.cycle ||= { enabled: true, starts: [], periodLen: 5 });
+  const ci = cycleInfo();
+  openSheet(`${sheetTitle("Cycle")}
+    <p class="small muted" style="margin-top:0">🔒 Only stored on this phone and never shared.</p>
+    <label class="field"><span>Period started on</span><input type="date" id="cycStart" value="${today()}" max="${today()}"></label>
+    <button class="btn" data-act="cycle-log">Log period start</button>
+    <div class="row2" style="margin-top:14px">
+      <label class="field"><span>Typical period length (days)</span><input type="number" id="cycLen" inputmode="numeric" min="2" max="10" value="${c.periodLen || 5}"></label>
+      <div class="field"><span>Average cycle</span><div class="input" style="background:var(--surface-2)">${ci ? `${ci.avg} days` : "—"}</div></div>
+    </div>
+    <div class="card"><div class="card-head"><h2>History</h2></div>
+      <div class="weigh-list">${[...c.starts].sort().reverse().map((d) => `<div class="wl"><span>${parseYmd(d).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" })}</span><button data-act="cycle-del" data-v="${d}" aria-label="Delete">✕</button></div>`).join("") || `<div class="empty">No periods logged yet.</div>`}</div>
+    </div>`, () => {
+    const len = Number($("#cycLen")?.value);
+    if (len >= 2 && len <= 10) { c.periodLen = len; save(); }
+    render();
   });
 }
 
@@ -1709,6 +2018,24 @@ document.addEventListener("click", (ev) => {
       break;
     }
     case "close-render": closeSheet(); render(); break;
+    case "add-measure": openMeasure(); break;
+    case "add-photo": $("#progressPhotoInput").click(); break;
+    case "view-photo": viewPhoto(t.dataset.id); break;
+    case "del-photo": if (confirm("Delete this photo?")) deletePhoto(t.dataset.id).then(() => { closeSheet(); render(); }); break;
+    case "compare-photos": comparePhotos(); break;
+    case "toggle-cycle":
+      p.cycle ||= { enabled: false, starts: [], periodLen: 5 };
+      p.cycle.enabled = !p.cycle.enabled;
+      save(); render(); toast(p.cycle.enabled ? "Cycle tracking on — find it on Progress 🔒" : "Cycle tracking off");
+      break;
+    case "cycle-sheet": openCycle(); break;
+    case "cycle-log": {
+      const d = $("#cycStart").value || today();
+      p.cycle.starts = [...new Set([...(p.cycle.starts || []), d])].sort();
+      save(); closeSheet(); toast("Logged 🌸");
+      break;
+    }
+    case "cycle-del": p.cycle.starts = p.cycle.starts.filter((x) => x !== v); save(); closeSheet(); openCycle(); break;
     case "mood": ideas.moods.has(v) ? ideas.moods.delete(v) : ideas.moods.add(v); t.classList.toggle("on"); break;
     case "run-ideas": runIdeas(); break;
     case "idea-meal": ideas.meal = v; renderIdeas(); break;
