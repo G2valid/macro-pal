@@ -1,4 +1,4 @@
-import { estimateFood, prepareImage, MODELS, DEFAULT_MODEL } from "./ai.js";
+import { estimateFood, readFitnessScreens, prepareImage, MODELS, DEFAULT_MODEL } from "./ai.js";
 
 /* =========================================================
    Storage
@@ -19,10 +19,26 @@ const PRESETS = {
   keto: { label: "Keto", p: 25, c: 5, f: 70 },
   custom: { label: "Custom" },
 };
-const ACCENTS = {
-  ocean: "#0f766e", sky: "#1d4ed8", grape: "#6d28d9", berry: "#be185d",
-  sunset: "#c2410c", forest: "#3f6212", mono: "#3f3f46",
+const THEMES = {
+  ocean: { label: "Lagoon", g: ["#2dd4bf", "#0284c7"] },
+  sky: { label: "Ocean", g: ["#38bdf8", "#6366f1"] },
+  grape: { label: "Grape", g: ["#a855f7", "#4f46e5"] },
+  berry: { label: "Berry", g: ["#f472b6", "#9333ea"] },
+  candy: { label: "Candy", g: ["#f9a8d4", "#818cf8"] },
+  sunset: { label: "Sunset", g: ["#fb923c", "#e11d48"] },
+  fire: { label: "Fire", g: ["#fbbf24", "#dc2626"] },
+  forest: { label: "Lime", g: ["#a3e635", "#059669"] },
+  midnight: { label: "Midnight", g: ["#7c3aed", "#0891b2"] },
+  mono: { label: "Mono", g: ["#52525b", "#18181b"] },
 };
+const MEAL_EMO = { Breakfast: "🍳", Lunch: "🥗", Dinner: "🍽️", Snacks: "🍿" };
+const WORKOUTS = {
+  cycling: { emo: "🚴", label: "Cycling" }, running: { emo: "🏃", label: "Running" }, walking: { emo: "🚶", label: "Walking" },
+  strength: { emo: "🏋️", label: "Strength" }, hiit: { emo: "⚡", label: "HIIT" }, yoga: { emo: "🧘", label: "Yoga" },
+  stretching: { emo: "🤸", label: "Stretch" }, rowing: { emo: "🚣", label: "Rowing" }, swimming: { emo: "🏊", label: "Swim" },
+  other: { emo: "💪", label: "Other" },
+};
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 function load() {
   try {
@@ -87,10 +103,21 @@ function computeTargets(p = P()) {
   if (p.kcalOverride) kcal = p.kcalOverride;
   kcal = Math.round(kcal / 10) * 10;
 
-  const split = p.macroPreset === "custom" ? p.customSplit : PRESETS[p.macroPreset] || PRESETS.balanced;
-  const protein = Math.round((kcal * split.p) / 100 / 4);
-  const carbs = Math.round((kcal * split.c) / 100 / 4);
-  const fat = Math.round((kcal * split.f) / 100 / 9);
+  let protein, carbs, fat, split;
+  if (p.macroMode === "coach") {
+    // grams per lb of goal weight; carbs get whatever calories are left
+    const goalLb = p.goalWeightKg / LB;
+    protein = Math.round(goalLb * (p.proteinPerLb || 1));
+    fat = Math.round(goalLb * (p.fatPerLb || 0.35));
+    carbs = Math.max(0, Math.round((kcal - protein * 4 - fat * 9) / 4));
+    const sum = protein * 4 + carbs * 4 + fat * 9;
+    split = { p: Math.round((protein * 400) / sum), c: Math.round((carbs * 400) / sum), f: Math.round((fat * 900) / sum) };
+  } else {
+    split = p.macroPreset === "custom" ? p.customSplit : PRESETS[p.macroPreset] || PRESETS.balanced;
+    protein = Math.round((kcal * split.p) / 100 / 4);
+    carbs = Math.round((kcal * split.c) / 100 / 4);
+    fat = Math.round((kcal * split.f) / 100 / 9);
+  }
 
   let weeks = null;
   if (direction !== "maintain") {
@@ -152,7 +179,7 @@ function applyTheme() {
   if (mode === "auto") delete root.dataset.theme;
   else root.dataset.theme = mode;
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.content = ACCENTS[p?.accent || "ocean"];
+  if (meta) meta.content = (THEMES[p?.accent] || THEMES.ocean).g[1];
 }
 
 /* =========================================================
@@ -194,32 +221,59 @@ function render() {
   $("#dateLabel").textContent =
     currentDay === t ? "Today" : currentDay === addDays(t, -1) ? "Yesterday" : currentDay === addDays(t, 1) ? "Tomorrow" :
     parseYmd(currentDay).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-  $("#dateNav").style.visibility = tab === "today" ? "visible" : "hidden";
+  $("#dateNav").style.visibility = tab === "today" || tab === "fitness" ? "visible" : "hidden";
   document.querySelectorAll(".tab[data-tab]").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
-  for (const v of ["today", "progress", "settings"]) $(`#view-${v}`).hidden = v !== tab;
+  for (const v of ["today", "fitness", "progress", "settings"]) $(`#view-${v}`).hidden = v !== tab;
   if (tab === "today") renderToday();
+  if (tab === "fitness") renderFitness();
   if (tab === "progress") renderProgress();
   if (tab === "settings") renderSettings();
 }
 
+function streakDays(p = P()) {
+  let d = today();
+  if (!dayData(d).entries.length) d = addDays(d, -1);
+  let n = 0;
+  while ((p.days?.[d]?.entries || []).length) { n++; d = addDays(d, -1); }
+  return n;
+}
+
+function exerciseKcal(date = currentDay) {
+  return (dayData(date).workouts || []).reduce((s, w) => s + (w.kcal || 0), 0);
+}
+
+/** Calorie goal for a day, including any "eat back" exercise calories. */
+function dayGoal(date = currentDay) {
+  const tg = computeTargets();
+  const bonus = Math.round(exerciseKcal(date) * (P().eatBack || 0));
+  return { ...tg, base: tg.kcal, bonus, kcal: tg.kcal + bonus, carbs: tg.carbs + Math.round(bonus / 4) };
+}
+
+function greeting() {
+  const h = new Date().getHours();
+  return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+}
+
 function renderToday() {
   const p = P();
-  const tg = computeTargets();
+  const tg = dayGoal();
   const day = dayData();
   const tot = totals(day.entries);
   const remaining = tg.kcal - tot.kcal;
   const pct = Math.min(1, tot.kcal / tg.kcal);
   const C = 2 * Math.PI * 62;
   const over = remaining < 0;
+  const streak = streakDays();
+  const isToday = currentDay === today();
 
-  const macro = (key, name, val, goal, color) => {
+  const macro = (emo, name, val, goal, color) => {
     const w = Math.min(100, (val / goal) * 100);
     const left = goal - val;
     return `<div class="macro-row">
-      <div class="top"><span class="name"><span class="dot" style="background:var(--${color})"></span>${name}</span>
+      <div class="top"><span class="name"><span class="emo">${emo}</span>${name}</span>
       <span class="num"><b>${r0(val)}</b> / ${goal} g</span></div>
       <div class="bar" role="progressbar" aria-label="${name}" aria-valuenow="${r0(val)}" aria-valuemax="${goal}"><i style="width:${w}%;background:var(--${color})"></i></div>
-      <div class="left">${left >= 0 ? `${r0(left)} g left` : `${r0(-left)} g over`}</div>
+      <div class="left">${left > 0 ? `${r0(left)} g left` : left === 0 || r0(left) === 0 ? "Goal hit! 🎉" : `${r0(-left)} g over`}</div>
     </div>`;
   };
 
@@ -230,7 +284,7 @@ function renderToday() {
     const es = day.entries.filter((e) => e.meal === m);
     const mt = totals(es);
     return `<div class="card meal">
-      <div class="meal-head"><h3>${m}${es.length ? `<span class="kc num">${r0(mt.kcal)} kcal</span>` : ""}</h3>
+      <div class="meal-head"><h3><span class="emo">${MEAL_EMO[m]}</span> ${m}${es.length ? `<span class="kc num">${r0(mt.kcal)} kcal</span>` : ""}</h3>
         <button class="meal-add" data-act="open-add" data-meal="${m}" aria-label="Add to ${m}">+</button></div>
       ${es.length ? es.map((e) => `<button class="entry" data-act="edit-entry" data-id="${e.id}">
           <div><div class="nm">${esc(e.name)}${e.ai ? " ✨" : ""}</div>
@@ -240,8 +294,13 @@ function renderToday() {
     </div>`;
   }).join("");
 
+  const weighDay = p.weighDay ?? 1;
+  const needsWeigh = isToday && new Date().getDay() === weighDay && !(p.weights || []).some((w) => w.date === today());
+
   $("#view-today").innerHTML = `
-    <div class="card">
+    <div class="hero">
+      <div class="hero-top"><h2>${isToday ? `${greeting()}, ${esc(p.name)}` : parseYmd(currentDay).toLocaleDateString(undefined, { weekday: "long" })}</h2>
+        ${streak ? `<span class="streak">🔥 ${streak}-day streak</span>` : ""}</div>
       <div class="summary">
         <div class="ring">
           <svg viewBox="0 0 150 150" aria-hidden="true">
@@ -253,26 +312,70 @@ function renderToday() {
         </div>
         <div class="cal-lines">
           <div><span class="muted">Goal</span><b>${tg.kcal}</b></div>
+          ${tg.bonus ? `<div><span class="muted">incl. exercise</span><b>+${tg.bonus}</b></div>` : ""}
           <div><span class="muted">Eaten</span><b>${r0(tot.kcal)}</b></div>
           <div><span class="muted">${over ? "Over" : "Remaining"}</span><b>${r0(Math.abs(remaining))}</b></div>
-          <div class="small muted" style="margin-top:4px">${tg.direction === "lose" ? "Losing" : tg.direction === "gain" ? "Gaining" : "Maintaining"} · ${fmtW(latestWeightKg())} → ${fmtW(p.goalWeightKg)}</div>
+          <div><span class="goal-chip">${tg.direction === "lose" ? "📉 Losing" : tg.direction === "gain" ? "📈 Gaining" : "⚖️ Maintaining"} · ${fmtW(latestWeightKg(), 0)} → ${fmtW(p.goalWeightKg, 0)}</span></div>
         </div>
       </div>
     </div>
+    ${needsWeigh ? `<button class="banner pop" data-act="log-weight"><span class="big-emo">⚖️</span><div><b>It's weigh-in day!</b><span>Log your weekly number to track real progress.</span></div></button>` : ""}
     <div class="card macros">
-      ${macro("p", "Protein", tot.p, tg.protein, "protein")}
-      ${macro("c", "Carbs", tot.c, tg.carbs, "carbs")}
-      ${macro("f", "Fat", tot.f, tg.fat, "fat")}
+      <div class="card-head" style="margin-bottom:0"><h2>Macros</h2><button class="icon-q" data-act="edit-macros" aria-label="What are macros?">?</button></div>
+      ${macro("🥩", "Protein", tot.p, tg.protein, "protein")}
+      ${macro("🍞", "Carbs", tot.c, tg.carbs, "carbs")}
+      ${macro("🥑", "Fat", tot.f, tg.fat, "fat")}
     </div>
     ${meals}
     <div class="card">
-      <div class="card-head"><h2>Water</h2><span class="meta num">${day.water} / ${waterGoal} cups</span></div>
+      <div class="card-head"><h2>💧 Water</h2><span class="meta num">${day.water} / ${waterGoal} cups</span></div>
       <div class="water"><div class="cups">${cups}</div>
         <button class="pill-btn" data-act="water" data-n="-1" aria-label="Remove a cup">−</button>
         <button class="pill-btn" data-act="water" data-n="1" aria-label="Add a cup">+ Cup</button></div>
     </div>
     <button class="btn secondary" data-act="copy-yesterday">Copy yesterday's meals</button>
   `;
+
+  // Celebrate hitting the protein goal (once per day).
+  if (isToday && tg.protein && tot.p >= tg.protein) {
+    p.celebrated ||= {};
+    if (p.celebrated.protein !== currentDay) {
+      p.celebrated.protein = currentDay;
+      save();
+      confetti();
+      toast("Protein goal hit! 💪");
+    }
+  }
+}
+
+/* Tiny confetti burst */
+function confetti() {
+  const cv = $("#confetti");
+  if (!cv || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const ctx = cv.getContext("2d");
+  const dpr = devicePixelRatio || 1;
+  cv.width = innerWidth * dpr; cv.height = innerHeight * dpr;
+  cv.hidden = false;
+  const css = getComputedStyle(document.documentElement);
+  const colors = [css.getPropertyValue("--g1"), css.getPropertyValue("--g2"), "#3987e5", "#eb6834", "#1baf7a", "#fde047"].map((c) => c.trim());
+  const parts = Array.from({ length: 120 }, () => ({
+    x: innerWidth / 2 + (Math.random() - 0.5) * 80, y: innerHeight * 0.35,
+    vx: (Math.random() - 0.5) * 12, vy: -Math.random() * 12 - 4, r: Math.random() * 6 + 4,
+    a: Math.random() * Math.PI, va: (Math.random() - 0.5) * 0.3, c: colors[(Math.random() * colors.length) | 0],
+  }));
+  const t0 = performance.now();
+  const step = (t) => {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, innerWidth, innerHeight);
+    for (const q of parts) {
+      q.vy += 0.35; q.x += q.vx; q.y += q.vy; q.a += q.va; q.vx *= 0.99;
+      ctx.save(); ctx.translate(q.x, q.y); ctx.rotate(q.a); ctx.fillStyle = q.c;
+      ctx.fillRect(-q.r / 2, -q.r / 4, q.r, q.r / 2); ctx.restore();
+    }
+    if (t - t0 < 2200) requestAnimationFrame(step);
+    else { ctx.clearRect(0, 0, innerWidth, innerHeight); cv.hidden = true; }
+  };
+  requestAnimationFrame(step);
 }
 
 /* =========================================================
@@ -310,7 +413,10 @@ function weightChart(points, goalKg) {
   const gy = y(goalKg);
   const showGoal = gy >= T && gy <= H - B;
   const path = avg.map((p, i) => `${i ? "L" : "M"}${x(p.date).toFixed(1)},${y(p.kg).toFixed(1)}`).join(" ");
-  const dots = points.map((p) => `<circle class="raw" cx="${x(p.date)}" cy="${y(p.kg)}" r="3"/>`).join("");
+  const wd = P().weighDay ?? 1;
+  const dots = points.map((p) => parseYmd(p.date).getDay() === wd
+    ? `<circle class="wk" cx="${x(p.date)}" cy="${y(p.kg)}" r="5"/>`
+    : `<circle class="raw" cx="${x(p.date)}" cy="${y(p.kg)}" r="3"/>`).join("");
   window.__chart = { points, avg, x, y, W };
   return `<div class="chart-wrap" id="wChart">
     <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Weight trend chart">
@@ -323,7 +429,7 @@ function weightChart(points, goalKg) {
     </svg>
     <div class="tip" id="wTip" hidden></div>
   </div>
-  <div class="legend"><span><i></i>7-day trend</span><span><i class="dot"></i>Weigh-ins</span></div>`;
+  <div class="legend"><span><i></i>7-day trend</span><span><i class="dot"></i>Daily</span><span><i class="dot wkdot"></i>Weekly (${WEEKDAYS[wd]})</span></div>`;
 }
 
 function bindChartHover() {
@@ -347,7 +453,8 @@ function bindChartHover() {
     hover.querySelector("circle").setAttribute("cy", y(a.kg));
     tip.hidden = false;
     tip.style.left = `${(px / W) * rect.width}px`;
-    tip.innerHTML = `${parseYmd(p.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · <b>${fmtW(p.kg)}</b> · trend ${fmtW(a.kg)}`;
+    const wk = parseYmd(p.date).getDay() === (P().weighDay ?? 1) ? " ⭐" : "";
+    tip.innerHTML = `${parseYmd(p.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}${wk} · <b>${fmtW(p.kg)}</b> · trend ${fmtW(a.kg)}`;
   };
   const leave = () => { hover.style.display = "none"; tip.hidden = true; };
   svg.addEventListener("pointermove", move);
@@ -355,15 +462,34 @@ function bindChartHover() {
   svg.addEventListener("pointerleave", leave);
 }
 
+function weeklyWeights(p = P()) {
+  const wd = p.weighDay ?? 1;
+  return [...(p.weights || [])].filter((w) => parseYmd(w.date).getDay() === wd).sort((a, b) => a.date.localeCompare(b.date));
+}
+
 function renderProgress() {
   const p = P();
   const tg = computeTargets();
   const pts = [...(p.weights || [])].sort((a, b) => a.date.localeCompare(b.date));
-  const cur = latestWeightKg();
+  const weekly = weeklyWeights();
+  const wd = p.weighDay ?? 1;
+  // Goal progress follows the weekly number when there is one.
+  const cur = weekly.length ? weekly[weekly.length - 1].kg : latestWeightKg();
   const total = Math.abs(p.goalWeightKg - p.startWeightKg);
   const done = Math.abs(cur - p.startWeightKg);
   const towardGoal = Math.sign(p.goalWeightKg - p.startWeightKg) === Math.sign(cur - p.startWeightKg);
   const prog = total > 0 ? Math.max(0, Math.min(1, towardGoal ? done / total : 0)) : 1;
+  const losing = p.goalWeightKg < p.startWeightKg;
+
+  const deltaChip = (d) => {
+    if (d == null) return "";
+    const v = toDispW(Math.abs(d)).toFixed(1);
+    if (Math.abs(d) < 0.02) return `<span class="delta">± 0.0</span>`;
+    const good = losing ? d < 0 : d > 0;
+    return `<span class="delta ${good ? "good" : "bad"}">${d < 0 ? "▼" : "▲"} ${v} ${wUnit()}</span>`;
+  };
+  const lastW = weekly[weekly.length - 1];
+  const prevW = weekly[weekly.length - 2];
 
   // last 7 days of calories
   const days = Array.from({ length: 7 }, (_, i) => addDays(today(), i - 6));
@@ -380,25 +506,38 @@ function renderProgress() {
   }).join("");
 
   $("#view-progress").innerHTML = `
-    <div class="card">
-      <div class="card-head"><h2>Goal progress</h2><span class="meta">${Math.round(prog * 100)}%</span></div>
+    <div class="hero">
+      <div class="hero-top"><h2>🎯 Goal progress</h2><span class="streak">${Math.round(prog * 100)}%</span></div>
       <div class="stats3">
-        <div class="stat"><div class="v">${toDispW(p.startWeightKg).toFixed(1)}</div><div class="k">Start (${wUnit()})</div></div>
-        <div class="stat"><div class="v">${toDispW(cur).toFixed(1)}</div><div class="k">Current</div></div>
-        <div class="stat"><div class="v">${toDispW(p.goalWeightKg).toFixed(1)}</div><div class="k">Goal</div></div>
+        <div class="stat" style="background:rgba(255,255,255,.18)"><div class="v">${toDispW(p.startWeightKg).toFixed(1)}</div><div class="k muted">Start (${wUnit()})</div></div>
+        <div class="stat" style="background:rgba(255,255,255,.18)"><div class="v">${toDispW(cur).toFixed(1)}</div><div class="k muted">${weekly.length ? "This week" : "Current"}</div></div>
+        <div class="stat" style="background:rgba(255,255,255,.18)"><div class="v">${toDispW(p.goalWeightKg).toFixed(1)}</div><div class="k muted">Goal</div></div>
       </div>
-      <div class="goal-bar"><i style="width:${prog * 100}%"></i></div>
+      <div class="goal-bar" style="background:rgba(255,255,255,.25)"><i style="width:${prog * 100}%;background:#fff"></i></div>
       <div class="small muted">${
         tg.direction === "maintain" ? "You're at your goal — targets are set to maintain." :
         `${toDispW(Math.abs(p.goalWeightKg - cur)).toFixed(1)} ${wUnit()} to go${tg.goalDate ? ` · on pace for <b>${tg.goalDate.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}</b>` : ""}`
       }</div>
     </div>
+
     <div class="card">
-      <div class="card-head"><h2>Weight</h2><button class="pill-btn" data-act="log-weight">+ Weigh in</button></div>
+      <div class="card-head"><h2>⭐ Weekly weigh-in</h2><button class="meta" data-act="edit-weighday" style="color:var(--accent);font-weight:600">${WEEKDAYS[wd]}s ›</button></div>
+      ${lastW ? `<div class="wk-hero"><div><div class="v">${toDispW(lastW.kg).toFixed(1)} <span class="small muted">${wUnit()}</span></div>
+          <div class="small muted">${parseYmd(lastW.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}${prevW ? " · vs last week" : " · your first weekly number"}</div></div>
+          ${prevW ? deltaChip(lastW.kg - prevW.kg) : ""}</div>
+        <div class="weigh-list" style="margin-top:10px">${[...weekly].reverse().slice(1, 9).map((w, i, arr) => {
+          const older = weekly[weekly.length - 3 - i];
+          return `<div class="wl"><span>${parseYmd(w.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span><span><b class="num">${fmtW(w.kg)}</b> ${older ? deltaChip(w.kg - older.kg) : ""}</span></div>`;
+        }).join("")}</div>`
+      : `<div class="empty">Weigh in on ${WEEKDAYS[wd]}s — that number becomes your official weekly check-in. Daily weigh-ins still feed the trend line.</div>`}
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>📈 Weight trend</h2><button class="pill-btn" data-act="log-weight">+ Weigh in</button></div>
       ${weightChart(pts, p.goalWeightKg)}
     </div>
     <div class="card">
-      <div class="card-head"><h2>Last 7 days</h2><span class="meta num">avg ${r0(avgK)} kcal</span></div>
+      <div class="card-head"><h2>🔥 Last 7 days</h2><span class="meta num">avg ${r0(avgK)} kcal</span></div>
       <div class="week-wrap">
         <div class="week">${weekBars}</div>
         <div class="week-target" style="bottom:${(tg.kcal / maxK) * (120 - 17) + 17}px" title="Target"></div>
@@ -406,10 +545,13 @@ function renderProgress() {
       <div class="small muted" style="margin-top:8px">${logged.length} of 7 days logged · ${onTarget} within 10% of your ${tg.kcal} kcal goal (dashed line)</div>
     </div>
     <div class="card">
-      <div class="card-head"><h2>Weigh-ins</h2></div>
+      <div class="card-head"><h2>All weigh-ins</h2></div>
       <div class="weigh-list">${
-        pts.length ? [...pts].reverse().slice(0, 30).map((w) => `<div class="wl"><span>${parseYmd(w.date).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</span>
-          <span><b class="num">${fmtW(w.kg)}</b> <button data-act="del-weight" data-date="${w.date}" aria-label="Delete">✕</button></span></div>`).join("")
+        pts.length ? [...pts].reverse().slice(0, 30).map((w) => {
+          const wk = parseYmd(w.date).getDay() === wd;
+          return `<div class="wl ${wk ? "weekly" : ""}"><span>${parseYmd(w.date).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}${wk ? `<span class="weekly-tag">Weekly</span>` : ""}</span>
+          <span><b class="num">${fmtW(w.kg)}</b> <button data-act="del-weight" data-date="${w.date}" aria-label="Delete">✕</button></span></div>`;
+        }).join("")
         : `<div class="empty">No weigh-ins yet.</div>`
       }</div>
     </div>`;
@@ -423,35 +565,39 @@ function renderSettings() {
   const p = P();
   const tg = computeTargets();
   const others = Object.values(state.profiles).filter((x) => x.id !== p.id);
+  const macroLabel = p.macroMode === "coach" ? `${(p.proteinPerLb || 1).toFixed(2).replace(/0$/, "")} g/lb protein` : PRESETS[p.macroPreset]?.label || "Custom";
   $("#view-settings").innerHTML = `
-    <div class="card">
-      <div class="card-head"><h2>Daily targets</h2><span class="meta">${PRESETS[p.macroPreset]?.label || "Custom"}</span></div>
+    <div class="hero">
+      <div class="hero-top"><h2>Daily targets</h2><button class="streak" data-act="edit-macros">Adjust ›</button></div>
       <div class="targets-grid">
-        <div><div class="v">${tg.kcal}</div><div class="k">kcal</div></div>
-        <div><div class="v" style="color:var(--protein)">${tg.protein}g</div><div class="k">Protein</div></div>
-        <div><div class="v" style="color:var(--carbs)">${tg.carbs}g</div><div class="k">Carbs</div></div>
-        <div><div class="v" style="color:var(--fat)">${tg.fat}g</div><div class="k">Fat</div></div>
+        <div><div class="v">${tg.kcal}</div><div class="k muted">kcal</div></div>
+        <div><div class="v">${tg.protein}g</div><div class="k muted">🥩 Protein</div></div>
+        <div><div class="v">${tg.carbs}g</div><div class="k muted">🍞 Carbs</div></div>
+        <div><div class="v">${tg.fat}g</div><div class="k muted">🥑 Fat</div></div>
       </div>
-      <p class="small muted" style="margin:12px 0 0">BMR ${tg.bmr} · maintenance ≈ ${tg.tdee} kcal/day${p.kcalOverride ? " · calorie goal set manually" : ""}</p>
-      ${tg.floored && !p.kcalOverride ? `<div class="note warn small" style="margin:10px 0 0">Your pace would put you below a safe minimum, so the goal is held at ${tg.kcal} kcal. A slower pace is more sustainable.</div>` : ""}
+      <p class="small muted" style="margin:12px 0 0">Maintenance ≈ ${tg.tdee} kcal/day${p.kcalOverride ? " · calorie goal set manually" : ""}</p>
     </div>
+    ${tg.floored && !p.kcalOverride ? `<div class="note warn small">Your pace would put you below a safe minimum, so the goal is held at ${tg.kcal} kcal. A slower pace is more sustainable.</div>` : ""}
 
     <div class="section-label">Profile</div>
     <div class="list">
-      <button data-act="edit-profile"><span>Body stats & goal</span><span class="v">${fmtW(latestWeightKg(), 0)} → ${fmtW(p.goalWeightKg, 0)} ›</span></button>
-      <button data-act="edit-macros"><span>Macro split</span><span class="v">${tg.split.p}/${tg.split.c}/${tg.split.f} ›</span></button>
-      <button data-act="edit-water"><span>Water goal</span><span class="v">${p.waterGoal || 8} cups ›</span></button>
+      <button data-act="edit-profile"><span>📏 Body stats & goal</span><span class="v">${fmtW(latestWeightKg(), 0)} → ${fmtW(p.goalWeightKg, 0)} ›</span></button>
+      <button data-act="edit-macros"><span>🥩 Calories & macros</span><span class="v">${macroLabel} ›</span></button>
+      <button data-act="edit-weighday"><span>⭐ Weekly weigh-in day</span><span class="v">${WEEKDAYS[p.weighDay ?? 1]} ›</span></button>
+      <button data-act="edit-water"><span>💧 Water goal</span><span class="v">${p.waterGoal || 8} cups ›</span></button>
+      <button data-act="edit-fitness-goals"><span>👟 Steps & exercise</span><span class="v">${(p.stepGoal || 8000).toLocaleString()} steps ›</span></button>
     </div>
 
     <div class="section-label">Theme</div>
     <div class="card">
-      <div class="swatches">${Object.entries(ACCENTS).map(([k, c]) => `<button class="swatch ${p.accent === k ? "on" : ""}" style="background:${c}" data-act="accent" data-v="${k}" aria-label="${k} theme"></button>`).join("")}</div>
+      <div class="swatches">${Object.entries(THEMES).map(([k, t]) => `<button class="swatch ${p.accent === k ? "on" : ""}" data-act="accent" data-v="${k}"><i style="background:linear-gradient(135deg, ${t.g[0]}, ${t.g[1]})"></i>${t.label}</button>`).join("")}</div>
       <div class="seg" style="margin:14px 0 0">${["auto", "light", "dark"].map((m) => `<button class="${(p.mode || "auto") === m ? "on" : ""}" data-act="mode" data-v="${m}">${m === "auto" ? "Match phone" : m[0].toUpperCase() + m.slice(1)}</button>`).join("")}</div>
+      ${p.accent === "midnight" ? `<p class="hint" style="margin:8px 0 0">Midnight is always dark.</p>` : ""}
     </div>
 
-    <div class="section-label">Photo estimates (Claude)</div>
+    <div class="section-label">Claude (photos & screenshots)</div>
     <div class="list">
-      <button data-act="edit-ai"><span>API key & model</span><span class="v">${state.apiKey ? "Connected ✓" : "Not set up"} ›</span></button>
+      <button data-act="edit-ai"><span>✨ API key & model</span><span class="v">${state.apiKey ? "Connected ✓" : "Not set up"} ›</span></button>
     </div>
 
     <div class="section-label">People on this device</div>
@@ -509,7 +655,12 @@ function profileForm(p, isNew) {
     <label class="field"><span>Activity level</span><select name="activity">${ACTIVITY.map((a) => `<option value="${a.v}" ${(p?.activity || 1.375) === a.v ? "selected" : ""}>${a.label} — ${a.hint}</option>`).join("")}</select></label>
     <label class="field"><span>Pace toward goal</span><select name="pace">${paceOpts.map(([v, l]) => `<option value="${v}" ${v === nearestPace ? "selected" : ""}>${l}</option>`).join("")}</select>
       <span class="hint">Used when your goal is to lose or gain. For gaining, slower is usually better.</span></label>
-    ${isNew ? `<label class="field"><span>Macro style</span><select name="preset">${Object.entries(PRESETS).filter(([k]) => k !== "custom").map(([k, v]) => `<option value="${k}">${v.label} (${v.p}/${v.c}/${v.f})</option>`).join("")}</select><span class="hint">Protein / carbs / fat %. You can fine-tune later.</span></label>` : ""}
+    ${isNew ? `<label class="field"><span>Protein goal</span><select name="ppl">
+        <option value="0.7">Moderate — 0.7 g per lb of goal weight</option>
+        <option value="0.8">Active — 0.8 g per lb</option>
+        <option value="1" selected>Lifting / toning — 1 g per lb (popular)</option>
+        <option value="1.2">High — 1.2 g per lb</option>
+      </select><span class="hint">You can fine-tune this any time with the macro coach.</span></label>` : ""}
     <button class="btn" type="submit">${isNew ? "Calculate my targets" : "Save"}</button>
     ${!isNew ? "" : Object.keys(state.profiles).length ? `<button class="btn secondary" type="button" data-act="close">Cancel</button>` : ""}
   </form>`;
@@ -561,10 +712,11 @@ function bindProfileForm(existing) {
       save(); closeSheet(); render(); toast("Saved");
     } else {
       const id = uid();
-      const accents = Object.keys(ACCENTS);
+      const accents = Object.keys(THEMES);
       const used = Object.values(state.profiles).map((x) => x.accent);
       state.profiles[id] = {
-        id, ...base, startWeightKg: weightKg, macroPreset: f.preset || "balanced",
+        id, ...base, startWeightKg: weightKg, macroMode: "coach", proteinPerLb: Number(f.ppl) || 1, fatPerLb: 0.35, macroPreset: "balanced",
+        weighDay: 1, stepGoal: 8000, eatBack: 0,
         customSplit: { p: 30, c: 40, f: 30 }, accent: accents.find((a) => !used.includes(a)) || "ocean",
         mode: "auto", waterGoal: 8, days: {}, weights: [{ date: today(), kg: weightKg }], foods: [],
       };
@@ -588,7 +740,7 @@ function showTargetsIntro() {
       tg.direction === "gain" ? `Eating ${tg.kcal} puts you on track to reach your goal around <b>${tg.goalDate?.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}</b>.` :
       "These targets will keep you at your current weight."}</div>
     ${tg.floored ? `<div class="note warn">That pace would go below a safe minimum, so your goal is held at ${tg.kcal} kcal.</div>` : ""}
-    <p class="small muted">Tip: tap <b>+</b> to log food. Add a photo and Claude will estimate it. Change themes and add your partner's profile in Settings.</p>
+    <p class="small muted">Tip: tap <b>+</b> to log food. Add a photo and Claude will estimate it. Tap <b>?</b> next to Macros any time for the macro coach. Change themes and add your partner's profile in Settings.</p>
     <button class="btn" data-act="close">Let's go</button>`);
 }
 
@@ -841,33 +993,147 @@ function openEditEntry(id) {
 /* =========================================================
    Other sheets
    ========================================================= */
+let coach = null; // draft while the macro coach is open
+
+function paceChoices() {
+  return imperial()
+    ? [0.25, 0.5, 1, 1.5, 2].map((v) => ({ kg: v * LB, label: `${v} lb/week` }))
+    : [0.1, 0.25, 0.5, 0.75, 1].map((v) => ({ kg: v, label: `${v} kg/week` }));
+}
+
+function proteinNote(ppl) {
+  if (ppl < 0.75) return "Baseline — covers general health needs.";
+  if (ppl < 0.95) return "Active — good if you exercise regularly.";
+  if (ppl < 1.15) return "Lifting — the popular gym rule of thumb. 👍";
+  if (ppl < 1.35) return "High — on the upper end of what research supports.";
+  return "Very high — more than most bodies use; it crowds out carbs. Fine if you like it!";
+}
+
 function openMacros() {
   const p = P();
-  const cur = p.macroPreset;
-  const split = cur === "custom" ? p.customSplit : PRESETS[cur];
-  openSheet(`${sheetTitle("Macro split")}
-    <div class="chips" style="margin-bottom:14px">${Object.entries(PRESETS).map(([k, v]) => `<button class="chip ${cur === k ? "on" : ""}" data-act="preset" data-v="${k}">${v.label}</button>`).join("")}</div>
-    <form id="macroForm">
-      <div class="row3">
-        <label class="field"><span style="color:var(--protein)">Protein %</span><input name="p" type="number" inputmode="numeric" min="0" max="100" value="${split.p}" ${cur === "custom" ? "" : "readonly"}></label>
-        <label class="field"><span style="color:var(--carbs)">Carbs %</span><input name="c" type="number" inputmode="numeric" min="0" max="100" value="${split.c}" ${cur === "custom" ? "" : "readonly"}></label>
-        <label class="field"><span style="color:var(--fat)">Fat %</span><input name="f" type="number" inputmode="numeric" min="0" max="100" value="${split.f}" ${cur === "custom" ? "" : "readonly"}></label>
+  coach = {
+    mode: p.macroMode === "preset" && p.seenCoach ? "preset" : "coach",
+    ppl: p.proteinPerLb || 1, fpl: p.fatPerLb || 0.35,
+    preset: p.macroPreset || "balanced", custom: { ...(p.customSplit || { p: 30, c: 40, f: 30 }) },
+    paceKg: p.paceKg, override: p.kcalOverride || 0,
+  };
+  renderCoach();
+}
+
+function coachProfile() {
+  const p = P();
+  return { ...p, macroMode: coach.mode, proteinPerLb: coach.ppl, fatPerLb: coach.fpl, macroPreset: coach.preset, customSplit: coach.custom, paceKg: coach.paceKg, kcalOverride: coach.override };
+}
+
+function renderCoach() {
+  const p = P();
+  const tg = computeTargets(coachProfile());
+  const goalLb = p.goalWeightKg / LB;
+  const html = `${sheetTitle("Calories & macros")}
+    <details class="explain" ${p.seenCoach ? "" : "open"}>
+      <summary>🤔 What are macros?</summary>
+      <div class="in">
+        <p>Every calorie you eat comes from three <b>macros</b>:</p>
+        <div class="kcal-per"><div>🥩<b>4</b>kcal per g<br>Protein</div><div>🍞<b>4</b>kcal per g<br>Carbs</div><div>🥑<b>9</b>kcal per g<br>Fat</div></div>
+        <p>A <b>macro split</b> like 40/30/30 means 40% of your <i>calories</i> come from protein. Because percentages scale with calories, they can give strange numbers: 50% protein on a 3,200 kcal day is 1,600 kcal ÷ 4 = <b>400 g</b>. Way too much!</p>
+        <p>The easier way, used below: <b>① pick your calories</b>, <b>② set protein by your goal weight</b> (grams per lb), <b>③ keep fat at a healthy amount</b>, and carbs fill in the rest automatically.</p>
       </div>
-      <p class="hint" id="sumHint">Must add up to 100%.</p>
-      <label class="field"><span>Calorie goal override (optional)</span><input name="kcal" type="number" inputmode="numeric" min="800" max="6000" value="${p.kcalOverride || ""}" placeholder="Calculated: ${computeTargets({ ...p, kcalOverride: 0 }).kcal}"><span class="hint">Leave blank to use the calculated goal.</span></label>
-      <button class="btn">Save</button>
-    </form>`);
-  $("#macroForm").addEventListener("submit", (e) => {
-    e.preventDefault();
-    const f = e.target;
-    if (p.macroPreset === "custom") {
-      const s = { p: Number(f.p.value) || 0, c: Number(f.c.value) || 0, f: Number(f.f.value) || 0 };
-      if (s.p + s.c + s.f !== 100) return toast(`Adds up to ${s.p + s.c + s.f}% — needs to be 100%.`);
-      p.customSplit = s;
+    </details>
+
+    <div class="seg">${[["coach", "Macro coach (grams)"], ["preset", "% presets"]].map(([k, l]) => `<button class="${coach.mode === k ? "on" : ""}" data-act="coach-mode" data-v="${k}">${l}</button>`).join("")}</div>
+
+    <h3 style="margin:4px 2px 4px">① Daily calories</h3>
+    <p class="small muted" style="margin:0 2px 10px">Your body burns about <b>${tg.tdee} kcal/day</b> (maintenance) at your current weight and activity level. ${
+      tg.direction === "lose" ? "Eat less than that to lose:" : tg.direction === "gain" ? "Eat more than that to gain:" : "You're at your goal, so aim for maintenance."}</p>
+    <div class="pace-list" id="paceList">${tg.direction === "maintain" ? "" : paceChoices().map((c) => {
+      const t = computeTargets({ ...coachProfile(), paceKg: c.kg, kcalOverride: 0 });
+      const on = !coach.override && Math.abs(c.kg - coach.paceKg) < 0.01;
+      return `<button class="pace ${on ? "on" : ""} ${t.floored ? "low" : ""}" data-act="coach-pace" data-v="${c.kg}">
+        <div><div style="font-weight:600">${tg.direction === "lose" ? "Lose" : "Gain"} ${c.label}</div>
+        <div class="d">${t.floored ? "Too aggressive — held at safe minimum" : t.goalDate ? `Goal around ${t.goalDate.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}` : ""}</div></div>
+        <b class="num">${t.kcal}</b></button>`;
+    }).join("")}</div>
+    <label class="field"><span>Or set your own calorie goal</span><input id="coachKcal" type="number" inputmode="numeric" min="800" max="6000" value="${coach.override || ""}" placeholder="Using ${computeTargets({ ...coachProfile(), kcalOverride: 0 }).kcal} kcal"></label>
+
+    ${coach.mode === "coach" ? `
+    <h3 style="margin:14px 2px 8px">② Protein</h3>
+    <div class="slider-card">
+      <div class="top"><span><b class="num" id="pG">${Math.round(goalLb * coach.ppl)} g</b> <span class="muted small">/day</span></span><span class="num" id="pPer" style="font-weight:700;color:var(--protein)">${coach.ppl.toFixed(2)} g/lb</span></div>
+      <div class="sub" id="pSub">${coach.ppl.toFixed(2)} g × ${Math.round(goalLb)} lb goal weight · ${proteinNote(coach.ppl)}</div>
+      <input type="range" id="pRange" min="0.6" max="1.6" step="0.05" value="${coach.ppl}" aria-label="Protein grams per pound">
+      <div class="ticks"><span>0.6</span><span>0.8</span><span>1.0</span><span>1.2</span><span>1.4</span><span>1.6</span></div>
+    </div>
+    <h3 style="margin:14px 2px 8px">③ Fat</h3>
+    <div class="slider-card">
+      <div class="top"><span><b class="num" id="fG">${Math.round(goalLb * coach.fpl)} g</b> <span class="muted small">/day</span></span><span class="num" style="font-weight:700;color:var(--fat)" id="fPer">${coach.fpl.toFixed(2)} g/lb</span></div>
+      <div class="sub">Keep at least ~0.3 g per lb for hormones and energy. 0.35–0.45 suits most people.</div>
+      <input type="range" id="fRange" min="0.25" max="0.6" step="0.05" value="${coach.fpl}" aria-label="Fat grams per pound">
+    </div>` : `
+    <h3 style="margin:14px 2px 8px">② Pick a split</h3>
+    <div class="chips" style="margin-bottom:12px">${Object.entries(PRESETS).map(([k, v]) => `<button class="chip ${coach.preset === k ? "on" : ""}" data-act="coach-preset" data-v="${k}">${v.label}${v.p ? ` ${v.p}/${v.c}/${v.f}` : ""}</button>`).join("")}</div>
+    ${coach.preset === "custom" ? `<div class="row3">
+      <label class="field"><span style="color:var(--protein)">Protein %</span><input id="cP" type="number" inputmode="numeric" value="${coach.custom.p}"></label>
+      <label class="field"><span style="color:var(--carbs)">Carbs %</span><input id="cC" type="number" inputmode="numeric" value="${coach.custom.c}"></label>
+      <label class="field"><span style="color:var(--fat)">Fat %</span><input id="cF" type="number" inputmode="numeric" value="${coach.custom.f}"></label></div>` : ""}`}
+
+    <h3 style="margin:14px 2px 8px">Your day looks like</h3>
+    <div class="slider-card" id="coachResult">${coachResult(tg)}</div>
+    <button class="btn" data-act="coach-save">Save targets</button>`;
+  if ($("#sheet").hidden) openSheet(html, () => (coach = null));
+  else { const st = $("#sheetBody").scrollTop; $("#sheetBody").innerHTML = html; $("#sheetBody").scrollTop = st; }
+  bindCoach();
+}
+
+function coachResult(tg) {
+  const pk = tg.protein * 4, ck = tg.carbs * 4, fk = tg.fat * 9, sum = pk + ck + fk || 1;
+  const pct = (k) => Math.round((k / sum) * 100);
+  return `<div class="top"><span><b class="num">${tg.kcal}</b> <span class="muted small">kcal/day</span></span></div>
+    <div class="stack" aria-hidden="true"><i style="flex:${pk};background:var(--protein)"></i><i style="flex:${ck};background:var(--carbs)"></i><i style="flex:${fk};background:var(--fat)"></i></div>
+    <div class="stack-legend">
+      <div><span>🥩 Protein</span><b class="num">${tg.protein} g</b><span class="muted num">${pk} kcal · ${pct(pk)}%</span></div>
+      <div><span>🍞 Carbs</span><b class="num">${tg.carbs} g</b><span class="muted num">${ck} kcal · ${pct(ck)}%</span></div>
+      <div><span>🥑 Fat</span><b class="num">${tg.fat} g</b><span class="muted num">${fk} kcal · ${pct(fk)}%</span></div>
+    </div>
+    ${coach.mode === "coach" && tg.carbs < 50 ? `<div class="note warn small" style="margin:10px 0 0">Almost no room left for carbs. Lower protein or fat, or raise calories.</div>` : ""}`;
+}
+
+function bindCoach() {
+  const live = () => {
+    const tg = computeTargets(coachProfile());
+    const goalLb = P().goalWeightKg / LB;
+    if ($("#pG")) {
+      $("#pG").textContent = `${Math.round(goalLb * coach.ppl)} g`;
+      $("#pPer").textContent = `${coach.ppl.toFixed(2)} g/lb`;
+      $("#pSub").textContent = `${coach.ppl.toFixed(2)} g × ${Math.round(goalLb)} lb goal weight · ${proteinNote(coach.ppl)}`;
+      $("#fG").textContent = `${Math.round(goalLb * coach.fpl)} g`;
+      $("#fPer").textContent = `${coach.fpl.toFixed(2)} g/lb`;
     }
-    p.kcalOverride = Number(f.kcal.value) || 0;
-    save(); closeSheet(); render(); toast("Targets updated");
+    $("#coachResult").innerHTML = coachResult(tg);
+  };
+  $("#pRange")?.addEventListener("input", (e) => { coach.ppl = Number(e.target.value); live(); });
+  $("#fRange")?.addEventListener("input", (e) => { coach.fpl = Number(e.target.value); live(); });
+  $("#coachKcal")?.addEventListener("input", (e) => {
+    const v = Number(e.target.value);
+    coach.override = v >= 800 ? v : 0;
+    document.querySelectorAll(".pace").forEach((b) => b.classList.toggle("on", !coach.override && Math.abs(Number(b.dataset.v) - coach.paceKg) < 0.01));
+    live();
   });
+  for (const [id, k] of [["cP", "p"], ["cC", "c"], ["cF", "f"]]) {
+    $("#" + id)?.addEventListener("input", (e) => { coach.custom[k] = Number(e.target.value) || 0; live(); });
+  }
+}
+
+function saveCoach() {
+  const p = P();
+  if (coach.mode === "preset" && coach.preset === "custom") {
+    const t = coach.custom.p + coach.custom.c + coach.custom.f;
+    if (t !== 100) return toast(`Your % add up to ${t} — they need to make 100.`);
+  }
+  Object.assign(p, {
+    macroMode: coach.mode, proteinPerLb: coach.ppl, fatPerLb: coach.fpl, macroPreset: coach.preset,
+    customSplit: coach.custom, paceKg: coach.paceKg, kcalOverride: coach.override, seenCoach: true,
+  });
+  save(); closeSheet(); render(); toast("Targets updated 🎯");
 }
 
 function openAiSettings() {
@@ -904,7 +1170,7 @@ function openProfileSwitcher() {
   const ps = Object.values(state.profiles);
   openSheet(`${sheetTitle("Who's tracking?")}
     <div class="list" style="margin-bottom:12px">${ps.map((o) => `<button data-act="switch" data-id="${o.id}">
-      <span style="display:flex;align-items:center;gap:10px"><span class="avatar" style="background:${ACCENTS[o.accent] || ACCENTS.ocean};color:#fff">${esc(o.name[0]?.toUpperCase())}</span>${esc(o.name)}</span>
+      <span style="display:flex;align-items:center;gap:10px"><span class="avatar" style="background:linear-gradient(135deg, ${(THEMES[o.accent] || THEMES.ocean).g.join(", ")});color:#fff">${esc(o.name[0]?.toUpperCase())}</span>${esc(o.name)}</span>
       <span class="v">${o.id === state.activeId ? "✓" : ""}</span></button>`).join("")}</div>
     <button class="btn secondary" data-act="new-profile">+ Add a person</button>`);
 }
@@ -950,6 +1216,275 @@ $("#photoInput").addEventListener("change", async (e) => {
 });
 
 /* =========================================================
+   Fitness
+   ========================================================= */
+function renderFitness() {
+  const p = P();
+  const day = dayData();
+  const act = day.activity || {};
+  const ws = day.workouts || [];
+  const stepGoal = p.stepGoal || 8000;
+  const C = 2 * Math.PI * 46;
+  const sp = Math.min(1, (act.steps || 0) / stepGoal);
+
+  const days = Array.from({ length: 7 }, (_, i) => addDays(currentDay, i - 6));
+  const wk = days.map((d) => ({ d, a: dayData(d).activity || {}, w: dayData(d).workouts || [] }));
+  const nW = wk.reduce((s, x) => s + x.w.length, 0);
+  const mins = wk.reduce((s, x) => s + x.w.reduce((t, w) => t + (w.minutes || 0), 0), 0);
+  const burn = wk.reduce((s, x) => s + x.w.reduce((t, w) => t + (w.kcal || 0), 0), 0);
+  const stepDays = wk.filter((x) => x.a.steps);
+  const avgSteps = stepDays.length ? stepDays.reduce((s, x) => s + x.a.steps, 0) / stepDays.length : 0;
+  const maxSteps = Math.max(stepGoal, ...wk.map((x) => x.a.steps || 0));
+  const bars = wk.map((x) => {
+    const h = x.a.steps ? Math.max(4, (x.a.steps / maxSteps) * 100) : 4;
+    return `<div class="col" title="${(x.a.steps || 0).toLocaleString()} steps"><div class="b-area"><div class="b ${x.a.steps ? "" : "none"}" style="height:${h}%"></div></div><div class="d">${parseYmd(x.d).toLocaleDateString(undefined, { weekday: "narrow" })}</div></div>`;
+  }).join("");
+
+  const stat = (v, l) => `<div><b class="num">${v || "—"}</b><span>${l}</span></div>`;
+  $("#view-fitness").innerHTML = `
+    <div class="btn-row">
+      <button class="btn" data-act="open-import">📸 Import screenshot</button>
+      <button class="btn secondary" data-act="open-workout">+ Log workout</button>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>👟 Activity</h2><button class="pill-btn" data-act="open-activity">Edit</button></div>
+      <div class="act-grid">
+        <div class="ring">
+          <svg viewBox="0 0 112 112" aria-hidden="true">
+            <defs><linearGradient id="stepsGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--g1)"/><stop offset="1" stop-color="var(--g2)"/></linearGradient></defs>
+            <circle class="track" cx="56" cy="56" r="46" fill="none" stroke-width="11"/>
+            <circle class="prog" cx="56" cy="56" r="46" fill="none" stroke-width="11" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - sp)}"/>
+          </svg>
+          <div class="ring-center"><div class="big num">${act.steps ? (act.steps >= 10000 ? (act.steps / 1000).toFixed(1) + "k" : act.steps.toLocaleString()) : "0"}</div><div class="lbl">of ${(stepGoal / 1000).toFixed(stepGoal % 1000 ? 1 : 0)}k steps</div></div>
+        </div>
+        <div class="act-stats">
+          ${stat(act.activeKcal, "Active kcal")}
+          ${stat(act.sleepH ? `${act.sleepH}h` : "", "Sleep")}
+          ${stat(act.restingHr, "Resting HR")}
+          ${stat(act.hrv ? `${act.hrv}ms` : "", "HRV")}
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>🏋️ Workouts</h2><span class="meta num">${ws.length ? `${ws.reduce((t, w) => t + (w.kcal || 0), 0)} kcal` : ""}</span></div>
+      ${ws.length ? ws.map((w) => {
+        const t = WORKOUTS[w.type] || WORKOUTS.other;
+        const bits = [w.minutes ? `${w.minutes} min` : "", w.distance ? `${w.distance} ${w.distUnit || ""}` : "", w.output ? `${w.output} kJ` : "", w.avgHr ? `${w.avgHr} bpm` : ""].filter(Boolean).join(" · ");
+        return `<button class="workout" data-act="open-workout" data-id="${w.id}"><span class="wico">${t.emo}</span>
+          <div class="grow"><div class="nm">${esc(w.title || t.label)}</div><div class="sub num">${bits}</div></div>
+          <div class="kcal num">${w.kcal ? `${w.kcal} kcal` : ""}</div></button>`;
+      }).join("") : `<div class="empty">No workouts logged ${currentDay === today() ? "today" : "this day"}. Import a Peloton or RingConn screenshot, or log one by hand.</div>`}
+      ${ws.length && (P().eatBack || 0) > 0 ? `<p class="small muted" style="margin:8px 0 0">${P().eatBack === 1 ? "All" : "Half"} of these calories are added to today's food goal.</p>` : ""}
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>📅 Last 7 days</h2><span class="meta num">avg ${Math.round(avgSteps).toLocaleString()} steps</span></div>
+      <div class="mini-bars">${bars}</div>
+      <div class="stats3" style="margin-top:12px">
+        <div class="stat"><div class="v">${nW}</div><div class="k">Workouts</div></div>
+        <div class="stat"><div class="v">${mins}</div><div class="k">Minutes</div></div>
+        <div class="stat"><div class="v">${burn.toLocaleString()}</div><div class="k">kcal burned</div></div>
+      </div>
+    </div>`;
+}
+
+function openFitnessAdd() {
+  openSheet(`${sheetTitle("Add activity")}
+    <button class="banner" data-act="open-import" style="margin-bottom:10px"><span class="big-emo">📸</span><div><b>Import screenshots</b><span>Peloton, RingConn or any app — Claude reads them for you</span></div></button>
+    <button class="banner" data-act="open-workout" style="margin-bottom:10px"><span class="big-emo">🏋️</span><div><b>Log a workout</b><span>Type it in yourself</span></div></button>
+    <button class="banner" data-act="open-activity"><span class="big-emo">👟</span><div><b>Steps, sleep & heart rate</b><span>Daily stats from your ring</span></div></button>`);
+}
+
+let wDraft = null;
+function openWorkout(id) {
+  const day = ensureDay();
+  day.workouts ||= [];
+  const w = id ? day.workouts.find((x) => x.id === id) : null;
+  wDraft = { type: w?.type || "cycling", id };
+  const v = (k) => (w?.[k] ? esc(w[k]) : "");
+  openSheet(`${sheetTitle(w ? "Edit workout" : "Log workout")}
+    <div class="type-pick">${Object.entries(WORKOUTS).map(([k, t]) => `<button type="button" class="${wDraft.type === k ? "on" : ""}" data-act="wtype" data-v="${k}"><span>${t.emo}</span>${t.label}</button>`).join("")}</div>
+    <form id="wkForm">
+      <label class="field"><span>Name (optional)</span><input name="title" maxlength="60" value="${v("title")}" placeholder="e.g. 30 min Pop Ride with Cody"></label>
+      <div class="row2">
+        <label class="field"><span>Minutes</span><input name="minutes" type="number" inputmode="numeric" min="0" value="${v("minutes")}"></label>
+        <label class="field"><span>Calories burned</span><input name="kcal" type="number" inputmode="numeric" min="0" value="${v("kcal")}"></label>
+      </div>
+      <div class="row3">
+        <label class="field"><span>Distance</span><input name="distance" type="number" inputmode="decimal" step="0.01" min="0" value="${v("distance")}"></label>
+        <label class="field"><span>Unit</span><select name="distUnit"><option ${w?.distUnit === "km" ? "" : "selected"}>mi</option><option ${w?.distUnit === "km" ? "selected" : ""}>km</option></select></label>
+        <label class="field"><span>Avg HR</span><input name="avgHr" type="number" inputmode="numeric" min="0" value="${v("avgHr")}"></label>
+      </div>
+      <label class="field"><span>Output (kJ, Peloton)</span><input name="output" type="number" inputmode="numeric" min="0" value="${v("output")}"></label>
+      <label class="field"><span>Notes</span><input name="notes" maxlength="120" value="${v("notes")}"></label>
+      <button class="btn">Save workout</button>
+      ${w ? `<button class="btn danger" type="button" data-act="del-workout" data-id="${w.id}">Delete</button>` : ""}
+    </form>`, () => (wDraft = null));
+  $("#wkForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target));
+    const rec = {
+      type: wDraft.type, title: f.title.trim(), minutes: Number(f.minutes) || 0, kcal: Number(f.kcal) || 0,
+      distance: Number(f.distance) || 0, distUnit: f.distUnit, avgHr: Number(f.avgHr) || 0, output: Number(f.output) || 0, notes: f.notes.trim(),
+    };
+    if (w) Object.assign(w, rec);
+    else day.workouts.push({ id: uid(), source: "manual", ...rec });
+    save(); closeSheet(); render(); toast(w ? "Saved" : "Workout logged 💪");
+  });
+}
+
+function openActivity() {
+  const day = ensureDay();
+  const a = day.activity || {};
+  const v = (k) => (a[k] ? a[k] : "");
+  openSheet(`${sheetTitle("Daily stats")}
+    <form id="actForm">
+      <div class="row2">
+        <label class="field"><span>👟 Steps</span><input name="steps" type="number" inputmode="numeric" min="0" value="${v("steps")}"></label>
+        <label class="field"><span>🔥 Active kcal</span><input name="activeKcal" type="number" inputmode="numeric" min="0" value="${v("activeKcal")}"></label>
+      </div>
+      <div class="row3">
+        <label class="field"><span>😴 Sleep (h)</span><input name="sleepH" type="number" inputmode="decimal" step="0.1" min="0" value="${v("sleepH")}"></label>
+        <label class="field"><span>❤️ Rest HR</span><input name="restingHr" type="number" inputmode="numeric" min="0" value="${v("restingHr")}"></label>
+        <label class="field"><span>📈 HRV</span><input name="hrv" type="number" inputmode="numeric" min="0" value="${v("hrv")}"></label>
+      </div>
+      <p class="hint">Tip: screenshot your RingConn summary and use Import instead.</p>
+      <button class="btn">Save</button>
+    </form>`);
+  $("#actForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target));
+    day.activity = Object.fromEntries(Object.entries(f).map(([k, x]) => [k, Number(x) || 0]));
+    save(); closeSheet(); render(); toast("Saved");
+  });
+}
+
+/* ---------- Screenshot import ---------- */
+let shots = null; // { images, loading, error, result }
+
+function openImport() {
+  shots = { images: [], loading: false, error: null, result: null };
+  renderImport();
+}
+
+function renderImport() {
+  let body;
+  if (!state.apiKey) {
+    body = `<div class="note">Screenshot import uses Claude. Add your Anthropic API key once in <b>Settings → API key</b>.</div><button class="btn" data-act="edit-ai">Set up Claude</button>`;
+  } else if (shots.loading) {
+    body = `<div class="shots">${shots.images.map((im) => `<img src="${im.dataUrl}" alt="">`).join("")}</div><div class="empty"><div class="spinner"></div>Claude is reading your screenshot${shots.images.length > 1 ? "s" : ""}…</div>`;
+  } else if (!shots.result) {
+    body = `${shots.images.length ? `<div class="shots">${shots.images.map((im) => `<img src="${im.dataUrl}" alt="Screenshot">`).join("")}</div>` : ""}
+      <button class="photo-drop" data-act="pick-shots"><span class="cam">🖼️</span><b>${shots.images.length ? "Choose different screenshots" : "Choose screenshots"}</b><span class="small">Up to 4 from the same day — e.g. your Peloton workout summary and RingConn daily overview</span></button><br>
+      ${shots.error ? `<div class="note warn">${esc(shots.error)}</div>` : ""}
+      ${shots.images.length ? `<button class="btn" data-act="run-shots">Read ${shots.images.length > 1 ? "screenshots" : "screenshot"}</button>` : ""}`;
+  } else {
+    const r = shots.result;
+    const d = r.daily;
+    const num = (k, label, step = 1) => `<label class="field"><span>${label}</span><input type="number" inputmode="decimal" step="${step}" data-daily="${k}" value="${d[k] || ""}"></label>`;
+    body = `<div class="note">✨ ${esc(r.summary)}</div>
+      <label class="field"><span>Which day is this for?</span><input type="date" id="shotDate" value="${r.date || currentDay}" max="${today()}"></label>
+      ${r.workouts.length ? `<h3 style="margin:6px 2px 8px">Workouts</h3>${r.workouts.map((w, i) => `<div class="ai-item" data-wi="${i}">
+          <div class="hdr"><span style="font-size:22px">${(WORKOUTS[w.type] || WORKOUTS.other).emo}</span><input class="input" data-k="title" value="${esc(w.title || (WORKOUTS[w.type] || WORKOUTS.other).label)}"><button class="rm" data-act="shot-rm" data-i="${i}">Remove</button></div>
+          <div class="row4">
+            <label>Min<input class="input num" data-k="minutes" type="number" value="${w.minutes || ""}"></label>
+            <label>kcal<input class="input num" data-k="kcal" type="number" value="${w.kcal || ""}"></label>
+            <label>${esc(w.distUnit || "dist")}<input class="input num" data-k="distance" type="number" step="0.01" value="${w.distance || ""}"></label>
+            <label>${w.output ? "kJ" : "Avg HR"}<input class="input num" data-k="${w.output ? "output" : "avgHr"}" type="number" value="${(w.output || w.avgHr) || ""}"></label>
+          </div></div>`).join("")}` : ""}
+      ${Object.values(d).some(Boolean) ? `<h3 style="margin:6px 2px 8px">Daily stats</h3>
+        <div class="row2">${num("steps", "👟 Steps")}${num("activeKcal", "🔥 Active kcal")}</div>
+        <div class="row3">${num("sleepH", "😴 Sleep h", 0.1)}${num("restingHr", "❤️ Rest HR")}${num("hrv", "📈 HRV")}</div>` : ""}
+      ${!r.workouts.length && !Object.values(d).some(Boolean) ? `<div class="empty">Nothing to import was found in that screenshot.</div>` : `<button class="btn" data-act="save-shots">Save to log</button>`}
+      <button class="btn secondary" data-act="open-import">Start over</button>`;
+  }
+  const html = `${sheetTitle("Import screenshots")}${body}`;
+  if ($("#sheet").hidden) openSheet(html, () => (shots = null));
+  else $("#sheetBody").innerHTML = html;
+}
+
+function syncShotEdits() {
+  if (!shots?.result) return;
+  document.querySelectorAll("[data-wi]").forEach((el) => {
+    const w = shots.result.workouts[Number(el.dataset.wi)];
+    el.querySelectorAll("[data-k]").forEach((inp) => { w[inp.dataset.k] = inp.dataset.k === "title" ? inp.value : Number(inp.value) || 0; });
+  });
+  document.querySelectorAll("[data-daily]").forEach((inp) => { shots.result.daily[inp.dataset.daily] = Number(inp.value) || 0; });
+  const dt = $("#shotDate");
+  if (dt?.value) shots.result.date = dt.value;
+}
+
+async function runShots() {
+  shots.loading = true; shots.error = null;
+  renderImport();
+  try {
+    const result = await readFitnessScreens({ apiKey: state.apiKey, model: state.model || DEFAULT_MODEL, images: shots.images, todayYmd: today() });
+    if (!shots) return;
+    shots.result = result;
+  } catch (err) {
+    if (!shots) return;
+    shots.error = err.message;
+  }
+  shots.loading = false;
+  renderImport();
+}
+
+function saveShots() {
+  syncShotEdits();
+  const r = shots.result;
+  const date = r.date || currentDay;
+  const day = ensureDay(date);
+  day.workouts ||= [];
+  let added = 0;
+  for (const w of r.workouts) {
+    const dup = day.workouts.some((x) => (x.title || "") === (w.title || "") && x.minutes === w.minutes && x.kcal === w.kcal);
+    if (!dup) { day.workouts.push({ id: uid(), source: "screenshot", ...w }); added++; }
+  }
+  const nz = Object.fromEntries(Object.entries(r.daily).filter(([, v]) => v));
+  if (Object.keys(nz).length) day.activity = { ...(day.activity || {}), ...nz };
+  save(); closeSheet();
+  currentDay = date; tab = "fitness"; render();
+  toast(added ? `Logged ${added} workout${added > 1 ? "s" : ""} 💪` : "Daily stats saved");
+  if (added) confetti();
+}
+
+$("#shotInput").addEventListener("change", async (e) => {
+  const files = [...e.target.files].slice(0, 4);
+  e.target.value = "";
+  if (!files.length || !shots) return;
+  try {
+    shots.images = await Promise.all(files.map(prepareImage));
+    shots.result = null; shots.error = null;
+    renderImport();
+  } catch (err) { toast(err.message || "Couldn't read those images."); }
+});
+
+/* ---------- Small settings sheets ---------- */
+function openWeighDay() {
+  const p = P();
+  openSheet(`${sheetTitle("Weekly weigh-in day")}
+    <p class="small muted" style="margin-top:0">Weigh in as often as you like — daily numbers feed the trend line. The weigh-in on this day becomes your official <b>weekly</b> number, so normal day-to-day swings don't throw you off.</p>
+    <div class="day-pick">${WEEKDAYS.map((d, i) => `<button class="${(p.weighDay ?? 1) === i ? "on" : ""}" data-act="set-weighday" data-v="${i}">${d}</button>`).join("")}</div>
+    <p class="hint" style="margin-top:12px">Tip: pick a morning you're usually home — weigh right after waking up.</p>`);
+}
+
+function openFitnessGoals() {
+  const p = P();
+  openSheet(`${sheetTitle("Steps & exercise")}
+    <form id="fgForm">
+      <label class="field"><span>Daily step goal</span><input name="steps" type="number" inputmode="numeric" min="1000" step="500" value="${p.stepGoal || 8000}"></label>
+      <label class="field"><span>Add workout calories to my food goal?</span></label>
+      <div class="seg">${[[0, "Off"], [0.5, "Half"], [1, "All"]].map(([v, l]) => `<button type="button" class="${(p.eatBack || 0) === v ? "on" : ""}" data-act="eatback" data-v="${v}">${l}</button>`).join("")}</div>
+      <p class="hint" style="margin-top:-6px">Your activity level already counts typical exercise, so <b>Off</b> is the safe default. <b>Half</b> is a good middle ground on big workout days — trackers tend to overestimate calories burned.</p>
+      <button class="btn">Save</button>
+    </form>`);
+  $("#fgForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    p.stepGoal = Math.max(1000, Number(e.target.steps.value) || 8000);
+    save(); closeSheet(); render();
+  });
+}
+
+/* =========================================================
    Global actions
    ========================================================= */
 document.addEventListener("click", (ev) => {
@@ -962,7 +1497,31 @@ document.addEventListener("click", (ev) => {
     case "day-prev": currentDay = addDays(currentDay, -1); render(); break;
     case "day-next": currentDay = addDays(currentDay, 1); render(); break;
     case "day-today": currentDay = today(); render(); break;
-    case "open-add": photo = null; openAdd(t.dataset.meal); break;
+    case "open-add":
+      if (tab === "fitness" && !t.dataset.meal) { openFitnessAdd(); break; }
+      photo = null; openAdd(t.dataset.meal); break;
+    case "open-import": shots ? (shots = { images: [], loading: false, error: null, result: null }, renderImport()) : (closeSheet(), openImport()); break;
+    case "pick-shots": $("#shotInput").click(); break;
+    case "run-shots": runShots(); break;
+    case "shot-rm": syncShotEdits(); shots.result.workouts.splice(Number(t.dataset.i), 1); renderImport(); break;
+    case "save-shots": saveShots(); break;
+    case "open-workout": closeSheet(); openWorkout(t.dataset.id); break;
+    case "wtype": wDraft.type = v; document.querySelectorAll(".type-pick button").forEach((b) => b.classList.toggle("on", b === t)); break;
+    case "del-workout": {
+      const day = ensureDay();
+      day.workouts = (day.workouts || []).filter((x) => x.id !== t.dataset.id);
+      save(); closeSheet(); render(); toast("Deleted");
+      break;
+    }
+    case "open-activity": closeSheet(); openActivity(); break;
+    case "edit-weighday": openWeighDay(); break;
+    case "set-weighday": p.weighDay = Number(v); save(); closeSheet(); render(); toast(`Weekly weigh-in: ${WEEKDAYS[p.weighDay]}s`); break;
+    case "edit-fitness-goals": openFitnessGoals(); break;
+    case "eatback": p.eatBack = Number(v); save(); document.querySelectorAll("[data-act=eatback]").forEach((b) => b.classList.toggle("on", b === t)); break;
+    case "coach-mode": coach.mode = v; renderCoach(); break;
+    case "coach-pace": coach.paceKg = Number(v); coach.override = 0; renderCoach(); break;
+    case "coach-preset": coach.preset = v; renderCoach(); break;
+    case "coach-save": saveCoach(); break;
     case "pick-meal": addState.meal = v; renderAdd(); break;
     case "add-mode": syncAiEdits(); addState.mode = v; renderAdd(); break;
     case "add-food": {
@@ -1020,8 +1579,7 @@ document.addEventListener("click", (ev) => {
       save(); render();
       break;
     case "edit-profile": openNewProfile(p); break;
-    case "edit-macros": openMacros(); break;
-    case "preset": p.macroPreset = v; if (v === "custom" && !p.customSplit) p.customSplit = { p: 30, c: 40, f: 30 }; save(); openMacros(); break;
+    case "edit-macros": closeSheet(); openMacros(); break;
     case "edit-water": openWater(); break;
     case "edit-ai": openAiSettings(); break;
     case "clear-key": state.apiKey = ""; save(); closeSheet(); render(); toast("Key removed"); break;

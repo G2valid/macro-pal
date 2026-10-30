@@ -110,8 +110,6 @@ function loadImg(file) {
  * @param {object|null} o.previous  the previous estimate, when refining
  */
 export async function estimateFood({ apiKey, model, image, description, answers = [], previous = null }) {
-  const client = await getClient(apiKey);
-
   const content = [];
   if (image) {
     content.push({ type: "image", source: { type: "base64", media_type: image.mediaType, data: image.base64 } });
@@ -129,12 +127,28 @@ export async function estimateFood({ apiKey, model, image, description, answers 
   }
   content.push({ type: "text", text });
 
+  const data = await askClaude({ apiKey, model, system: SYSTEM, schema: SCHEMA, content, what: "estimate" });
+  data.items = (data.items || []).map((it) => ({
+    name: it.name,
+    portion: it.portion,
+    kcal: Math.round(it.calories),
+    p: round1(it.protein_g),
+    c: round1(it.carbs_g),
+    f: round1(it.fat_g),
+  }));
+  data.questions = (data.questions || []).slice(0, 3);
+  return data;
+}
+
+/** Send one request and return the parsed JSON matching `schema`. */
+async function askClaude({ apiKey, model, system, schema, content, what }) {
+  const client = await getClient(apiKey);
   const params = {
     model,
     max_tokens: 16000,
     thinking: { type: "adaptive" },
-    output_config: { effort: "medium", format: { type: "json_schema", schema: SCHEMA } },
-    system: SYSTEM,
+    output_config: { effort: "medium", format: { type: "json_schema", schema } },
+    system,
     messages: [{ role: "user", content }],
   };
   // Server-side refusal fallback (not offered for Haiku).
@@ -151,28 +165,93 @@ export async function estimateFood({ apiKey, model, image, description, answers 
   }
 
   if (response.stop_reason === "refusal") {
-    throw new Error("Claude declined to estimate this one. Try a different photo or add a description.");
+    throw new Error(`Claude declined this ${what}. Try a different image or add a description.`);
   }
   if (response.stop_reason === "max_tokens") {
-    throw new Error("The estimate got cut off. Please try again.");
+    throw new Error(`The ${what} got cut off. Please try again.`);
   }
   const textBlock = response.content.find((b) => b.type === "text");
-  if (!textBlock) throw new Error("No estimate came back. Please try again.");
-  let data;
+  if (!textBlock) throw new Error(`No ${what} came back. Please try again.`);
   try {
-    data = JSON.parse(textBlock.text);
+    return JSON.parse(textBlock.text);
   } catch {
     throw new Error("Couldn't read Claude's answer. Please try again.");
   }
-  data.items = (data.items || []).map((it) => ({
-    name: it.name,
-    portion: it.portion,
-    kcal: Math.round(it.calories),
-    p: round1(it.protein_g),
-    c: round1(it.carbs_g),
-    f: round1(it.fat_g),
+}
+
+/* ---------- Workout & activity screenshots ---------- */
+
+const FITNESS_SYSTEM = `You read fitness app screenshots for a personal tracking app.
+Screenshots are usually from Peloton (workout summaries: class title, instructor, duration, output in kJ, calories, distance, heart rate, strive score) or RingConn smart ring (steps, active calories, sleep, resting heart rate, HRV), but can be from any app or a photo of gym equipment.
+
+How to work:
+- Extract every distinct workout shown. Use the class/workout title when present.
+- type must be one of: cycling, running, walking, strength, yoga, stretching, hiit, rowing, swimming, other.
+- Only report numbers that are visible. Use 0 for anything not shown; never guess.
+- duration_min in minutes. distance with its unit as shown ("mi" or "km", empty if none). output_kj is Peloton's total output; 0 if not shown.
+- daily holds all-day stats (steps, active calories, sleep hours as a decimal, resting heart rate, HRV in ms); 0 for anything not shown.
+- date: the date shown on the screenshot as YYYY-MM-DD if a full date is visible, otherwise an empty string. Today is {TODAY}; if the screenshot only says "Today" use that.
+- summary: one friendly sentence describing what you found.`;
+
+const FITNESS_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["date", "workouts", "daily", "summary"],
+  properties: {
+    date: { type: "string" },
+    workouts: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["type", "title", "duration_min", "calories", "distance", "distance_unit", "avg_hr", "output_kj", "notes"],
+        properties: {
+          type: { type: "string", enum: ["cycling", "running", "walking", "strength", "yoga", "stretching", "hiit", "rowing", "swimming", "other"] },
+          title: { type: "string" },
+          duration_min: { type: "number" },
+          calories: { type: "number" },
+          distance: { type: "number" },
+          distance_unit: { type: "string" },
+          avg_hr: { type: "number" },
+          output_kj: { type: "number" },
+          notes: { type: "string" },
+        },
+      },
+    },
+    daily: {
+      type: "object",
+      additionalProperties: false,
+      required: ["steps", "active_calories", "sleep_hours", "resting_hr", "hrv_ms"],
+      properties: {
+        steps: { type: "number" },
+        active_calories: { type: "number" },
+        sleep_hours: { type: "number" },
+        resting_hr: { type: "number" },
+        hrv_ms: { type: "number" },
+      },
+    },
+    summary: { type: "string" },
+  },
+};
+
+/** Read one or more workout/activity screenshots. */
+export async function readFitnessScreens({ apiKey, model, images, todayYmd }) {
+  const content = images.map((im) => ({ type: "image", source: { type: "base64", media_type: im.mediaType, data: im.base64 } }));
+  content.push({ type: "text", text: images.length > 1 ? "These screenshots are from the same day. Extract the workouts and daily stats." : "Extract the workouts and daily stats from this screenshot." });
+  const data = await askClaude({
+    apiKey, model, system: FITNESS_SYSTEM.replace("{TODAY}", todayYmd), schema: FITNESS_SCHEMA, content, what: "screenshot reading",
+  });
+  data.workouts = (data.workouts || []).map((w) => ({
+    type: w.type, title: w.title, minutes: Math.round(w.duration_min || 0), kcal: Math.round(w.calories || 0),
+    distance: round1(w.distance), distUnit: w.distance_unit || "", avgHr: Math.round(w.avg_hr || 0),
+    output: Math.round(w.output_kj || 0), notes: w.notes || "",
   }));
-  data.questions = (data.questions || []).slice(0, 3);
+  const d = data.daily || {};
+  data.daily = {
+    steps: Math.round(d.steps || 0), activeKcal: Math.round(d.active_calories || 0), sleepH: round1(d.sleep_hours),
+    restingHr: Math.round(d.resting_hr || 0), hrv: Math.round(d.hrv_ms || 0),
+  };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(data.date || "")) data.date = "";
   return data;
 }
 
