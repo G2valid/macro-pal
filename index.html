@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Macro Pal</title>
+  <meta name="description" content="Track calories and macros toward your goal weight.">
+  <meta name="theme-color" content="#0f766e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Macro Pal">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <button class="profile-chip" id="profileChip" aria-label="Switch profile"></button>
+    <div class="date-nav" id="dateNav">
+      <button class="icon-btn" data-act="day-prev" aria-label="Previous day">‹</button>
+      <button class="date-label" data-act="day-today" id="dateLabel"></button>
+      <button class="icon-btn" data-act="day-next" aria-label="Next day">›</button>
+    </div>
+    <span class="topbar-spacer"></span>
+  </header>
+
+  <main id="main">
+    <section class="view" id="view-today"></section>
+    <section class="view" id="view-progress" hidden></section>
+    <section class="view" id="view-settings" hidden></section>
+  </main>
+
+  <nav class="tabbar" aria-label="Main">
+    <button class="tab active" data-tab="today"><span class="tab-ico">◎</span><span>Today</span></button>
+    <button class="tab add-tab" data-act="open-add" aria-label="Add food"><span class="plus">+</span></button>
+    <button class="tab" data-tab="progress"><span class="tab-ico">↗</span><span>Progress</span></button>
+    <button class="tab" data-tab="settings"><span class="tab-ico">⚙</span><span>Settings</span></button>
+  </nav>
+
+  <div class="sheet-backdrop" id="backdrop" hidden></div>
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true" hidden>
+    <div class="sheet-grip"></div>
+    <div class="sheet-body" id="sheetBody"></div>
+  </div>
+
+  <div class="toast" id="toast" role="status" hidden></div>
+
+  <input type="file" id="photoInput" accept="image/*" hidden>
+  <input type="file" id="importInput" accept="application/json" hidden>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
