@@ -1,7 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#14b8a6"/><stop offset="1" stop-color="#0f5e74"/></linearGradient></defs>
-  <rect width="512" height="512" fill="url(#g)"/>
-  <circle cx="256" cy="256" r="150" fill="none" stroke="#ffffff" stroke-opacity=".25" stroke-width="44"/>
-  <path d="M256 106 A150 150 0 1 1 116 310" fill="none" stroke="#ffffff" stroke-width="44" stroke-linecap="round"/>
-  <text x="256" y="292" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-weight="800" font-size="110" fill="#ffffff">M</text>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f472b6"/><stop offset=".5" stop-color="#a855f7"/><stop offset="1" stop-color="#4f46e5"/></linearGradient>
+    <filter id="sh" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#1e1b4b" flood-opacity=".45"/></filter>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <circle cx="440" cy="60" r="170" fill="#fff" opacity=".10"/>
+  <circle cx="40" cy="480" r="150" fill="#fff" opacity=".08"/>
+  <g filter="url(#sh)" fill="#fff">
+    <!-- plate -->
+    <circle cx="256" cy="268" r="128" fill="none" stroke="#fff" stroke-width="24"/>
+    <circle cx="256" cy="268" r="80" fill="#fff" fill-opacity=".22"/>
+    <!-- fork -->
+    <path d="M150 96v86c0 18 12 30 26 34v176a14 14 0 0 1-28 0V216c-14-4-26-16-26-34V96h10v78h10V96h8v78h10V96z" transform="translate(-72 0)"/>
+    <!-- knife -->
+    <path d="M424 96c-26 10-40 50-40 110 0 14 6 22 18 24v162a14 14 0 0 0 28 0V96z" transform="translate(58 0)"/>
+  </g>
+  <text x="256" y="300" text-anchor="middle" font-family="ui-rounded, 'SF Pro Rounded', Helvetica, Arial, sans-serif" font-weight="900" font-size="92" fill="#fff">M</text>
 </svg>
