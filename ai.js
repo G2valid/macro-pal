@@ -109,7 +109,7 @@ function loadImg(file) {
  * @param {Array<{question:string, answer:string}>} o.answers  answers to earlier questions
  * @param {object|null} o.previous  the previous estimate, when refining
  */
-export async function estimateFood({ apiKey, model, image, description, answers = [], previous = null }) {
+export async function estimateFood({ apiKey, model, image, description, answers = [], previous = null, diet = [] }) {
   const content = [];
   if (image) {
     content.push({ type: "image", source: { type: "base64", media_type: image.mediaType, data: image.base64 } });
@@ -117,6 +117,9 @@ export async function estimateFood({ apiKey, model, image, description, answers 
   let text = description?.trim()
     ? `Description from the user: ${description.trim()}`
     : "Estimate the food in this photo.";
+  if (diet.length) {
+    text += `\n\nThe user's dietary needs: ${diet.join(", ")}. If any item likely conflicts (e.g. bread, pasta, breading or soy sauce for gluten-free), say so briefly in notes.`;
+  }
   if (previous) {
     text += `\n\nYour previous estimate was:\n${JSON.stringify(previous.items)}`;
   }
@@ -260,7 +263,7 @@ export async function readFitnessScreens({ apiKey, model, images, todayYmd }) {
 const COACH_SYSTEM = `You are a warm, practical nutrition coach inside a couple's personal macro-tracking app.
 You are talking to one person about their own eating. Be encouraging and specific, never preachy or shaming.
 Favor simple, realistic food that normal people cook or buy, including grocery-store and restaurant options.
-Respect stated preferences and dislikes. You are not a doctor; for medical conditions, suggest a professional briefly.
+Respect stated preferences and dislikes. Dietary needs (like gluten-free) are strict rules: every suggestion must comply, and point out hidden sources to watch for (for gluten: soy sauce, malt, regular oats, breading, beer, many sauces and dressings) and suggest certified versions where it matters. You are not a doctor; for medical conditions, suggest a professional briefly.
 Keep every text field short: one or two sentences.`;
 
 const IDEAS_SCHEMA = {
@@ -337,6 +340,7 @@ export async function reviewEating({ apiKey, model, context }) {
 ${context}
 
 Give: a one-line headline, an overall verdict, 2-3 specific wins, 2-3 things to focus on this week, up to 3 easy food swaps based on things I actually ate, and a short grocery list (6-10 items) that would make next week easier.
+If I have dietary needs, flag any logged foods that commonly break them (gently, as "double-check" items) and keep every swap and grocery item compliant.
 If fewer than 3 days are logged, set verdict to not_enough_data and keep the advice general.`;
   return askClaude({ apiKey, model, system: COACH_SYSTEM, schema: REVIEW_SCHEMA, content: [{ type: "text", text }], what: "review" });
 }

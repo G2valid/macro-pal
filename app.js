@@ -1,4 +1,4 @@
-import { estimateFood, readFitnessScreens, suggestMeals, reviewEating, prepareImage, MODELS, DEFAULT_MODEL } from "./ai.js?v=4";
+import { estimateFood, readFitnessScreens, suggestMeals, reviewEating, prepareImage, MODELS, DEFAULT_MODEL } from "./ai.js?v=5";
 
 /* =========================================================
    Storage
@@ -591,6 +591,7 @@ function renderSettings() {
       <button data-act="edit-profile"><span>📏 Body stats & goal</span><span class="v">${fmtW(latestWeightKg(), 0)} → ${fmtW(p.goalWeightKg, 0)} ›</span></button>
       <button data-act="edit-macros"><span>🥩 Calories & macros</span><span class="v">${macroLabel} ›</span></button>
       <button data-act="edit-weighday"><span>⭐ Weekly weigh-in day</span><span class="v">${WEEKDAYS[p.weighDay ?? 1]} ›</span></button>
+      <button data-act="edit-diet"><span>🌾 Dietary needs</span><span class="v">${(p.diet || []).length ? esc(p.diet.join(", ")) : "None"} ›</span></button>
       <button data-act="edit-water"><span>💧 Water goal</span><span class="v">${p.waterGoal || 8} cups ›</span></button>
       <button data-act="edit-fitness-goals"><span>👟 Steps & exercise</span><span class="v">${(p.stepGoal || 8000).toLocaleString()} steps ›</span></button>
     </div>
@@ -963,7 +964,7 @@ async function runEstimate(refine = false) {
   try {
     const est = await estimateFood({
       apiKey: state.apiKey, model: state.model || DEFAULT_MODEL,
-      image: photo.image, description: photo.desc, answers, previous,
+      image: photo.image, description: photo.desc, answers, previous, diet: P().diet || [],
     });
     if (!photo) return; // sheet was closed
     photo.est = est; photo.answers = {};
@@ -1225,6 +1226,8 @@ $("#photoInput").addEventListener("change", async (e) => {
 /* =========================================================
    Food coach (Claude)
    ========================================================= */
+const DIETS = ["Gluten-free", "Dairy-free", "Vegetarian", "Vegan", "Pescatarian", "Nut allergy", "Low FODMAP", "Kosher", "Halal"];
+const dietLine = (p = P()) => (p.diet?.length ? `STRICT dietary needs (must follow): ${p.diet.join(", ")}.` : "");
 const MOODS = ["Quick & easy", "High protein", "Sweet tooth", "Comfort food", "Eating out", "Meal prep", "Vegetarian", "Snack"];
 let ideas = null; // { moods:Set, request, loading, error, data, meal }
 
@@ -1240,6 +1243,7 @@ function todayContext() {
     `Eaten so far today: ${r0(tot.kcal)} kcal, ${r0(tot.p)} g protein, ${r0(tot.c)} g carbs, ${r0(tot.f)} g fat${day.entries.length ? ` (${day.entries.map((e) => e.name).join(", ")})` : ""}.`,
     `Remaining today: ${r0(tg.kcal - tot.kcal)} kcal, ${r0(tg.protein - tot.p)} g protein, ${r0(tg.carbs - tot.c)} g carbs, ${r0(tg.fat - tot.f)} g fat.`,
     `Local time: ${h}:00 (${h < 11 ? "morning" : h < 15 ? "midday" : h < 20 ? "evening" : "late night"}).`,
+    dietLine(p),
     p.foodPrefs ? `My food preferences and dislikes: ${p.foodPrefs}` : "",
   ].filter(Boolean).join("\n");
 }
@@ -1250,9 +1254,10 @@ function weekContext() {
   const lines = [
     `Goal: ${tg.direction} weight (${fmtW(latestWeightKg(), 0)} now, goal ${fmtW(p.goalWeightKg, 0)}).`,
     `Daily targets: ${tg.kcal} kcal, ${tg.protein} g protein, ${tg.carbs} g carbs, ${tg.fat} g fat.`,
+    dietLine(p),
     p.foodPrefs ? `Preferences and dislikes: ${p.foodPrefs}` : "",
-    "",
-  ];
+  ].filter(Boolean);
+  lines.push("");
   for (let i = 6; i >= 0; i--) {
     const d = addDays(today(), -i);
     const es = dayData(d).entries;
@@ -1262,7 +1267,7 @@ function weekContext() {
       ? `${label}: ${r0(t.kcal)} kcal, P ${r0(t.p)} g, C ${r0(t.c)} g, F ${r0(t.f)} g — ${es.map((e) => `${e.meal}: ${e.name} (${r0(e.kcal * (e.servings || 1))} kcal)`).join("; ")}`
       : `${label}: nothing logged`);
   }
-  return lines.filter((l, i) => l || i === 3).join("\n");
+  return lines.join("\n");
 }
 
 function openIdeas() {
@@ -1283,11 +1288,13 @@ function renderIdeas() {
       <div style="font-weight:600;margin:4px 2px 8px">In the mood for…</div>
       <div class="chips" style="margin-bottom:12px">${MOODS.map((m) => `<button class="chip ${ideas.moods.has(m) ? "on" : ""}" data-act="mood" data-v="${m}">${m}</button>`).join("")}</div>
       <label class="field"><span>Anything else? (optional)</span><input id="ideaReq" class="input" value="${esc(ideas.request)}" placeholder="e.g. something with chicken, under 15 minutes"></label>
+      <div style="font-weight:600;margin:4px 2px 8px">Dietary needs <span class="small muted">(always followed)</span></div>
+      <div class="chips" style="margin-bottom:12px">${DIETS.map((d) => `<button class="chip ${(p.diet || []).includes(d) ? "on" : ""}" data-act="diet" data-v="${d}">${d === "Gluten-free" ? "🌾 " : ""}${d}</button>`).join("")}</div>
       <label class="field"><span>Foods you love or avoid (remembered)</span><textarea id="foodPrefs" rows="2" placeholder="e.g. no mushrooms, loves Mexican food, lactose intolerant">${esc(p.foodPrefs || "")}</textarea></label>
       ${ideas.error ? `<div class="note warn">${esc(ideas.error)}</div>` : ""}
       <button class="btn" data-act="run-ideas">💡 Get ideas</button>`;
   } else {
-    body = `<div class="note">${esc(ideas.data.intro)}</div>
+    body = `${(p.diet || []).length ? `<div class="small muted" style="margin:0 2px 8px">✓ All ideas are ${esc(p.diet.join(", ").toLowerCase())}</div>` : ""}<div class="note">${esc(ideas.data.intro)}</div>
       <div class="seg">${MEALS.map((m) => `<button class="${ideas.meal === m ? "on" : ""}" data-act="idea-meal" data-v="${m}">${m}</button>`).join("")}</div>
       ${ideas.data.ideas.map((it, i) => `<div class="ai-item idea">
         <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline"><b style="font-size:16px">${esc(it.name)}</b><span class="num" style="font-weight:700;white-space:nowrap">${it.kcal} kcal</span></div>
@@ -1622,6 +1629,14 @@ $("#shotInput").addEventListener("change", async (e) => {
 });
 
 /* ---------- Small settings sheets ---------- */
+function openDiet() {
+  const p = P();
+  openSheet(`${sheetTitle("Dietary needs")}
+    <p class="small muted" style="margin-top:0">Claude treats these as strict rules for meal ideas, the weekly review and grocery lists, and flags photo estimates that may not fit.</p>
+    <div class="chips">${DIETS.map((d) => `<button class="chip ${(p.diet || []).includes(d) ? "on" : ""}" data-act="diet" data-v="${d}">${d}</button>`).join("")}</div>
+    <br><button class="btn" data-act="close-render">Done</button>`);
+}
+
 function openWeighDay() {
   const p = P();
   openSheet(`${sheetTitle("Weekly weigh-in day")}
@@ -1686,6 +1701,14 @@ document.addEventListener("click", (ev) => {
     case "coach-preset": coach.preset = v; renderCoach(); break;
     case "coach-save": saveCoach(); break;
     case "coach-ideas": openIdeas(); break;
+    case "edit-diet": openDiet(); break;
+    case "diet": {
+      p.diet ||= [];
+      p.diet = p.diet.includes(v) ? p.diet.filter((x) => x !== v) : [...p.diet, v];
+      save(); t.classList.toggle("on");
+      break;
+    }
+    case "close-render": closeSheet(); render(); break;
     case "mood": ideas.moods.has(v) ? ideas.moods.delete(v) : ideas.moods.add(v); t.classList.toggle("on"); break;
     case "run-ideas": runIdeas(); break;
     case "idea-meal": ideas.meal = v; renderIdeas(); break;
