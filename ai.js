@@ -345,6 +345,61 @@ If fewer than 3 days are logged, set verdict to not_enough_data and keep the adv
   return askClaude({ apiKey, model, system: COACH_SYSTEM, schema: REVIEW_SCHEMA, content: [{ type: "text", text }], what: "review" });
 }
 
+const DAY_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["intro", "meals", "tips"],
+  properties: {
+    intro: { type: "string" },
+    meals: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["slot", "title", "items"],
+        properties: {
+          slot: { type: "string" },
+          title: { type: "string" },
+          items: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["food", "portion", "calories", "protein_g", "carbs_g", "fat_g"],
+              properties: {
+                food: { type: "string" }, portion: { type: "string" }, calories: { type: "number" },
+                protein_g: { type: "number" }, carbs_g: { type: "number" }, fat_g: { type: "number" },
+              },
+            },
+          },
+        },
+      },
+    },
+    tips: { type: "array", items: { type: "string" } },
+  },
+};
+
+/** A full sample day that hits each meal's budget. */
+export async function suggestExampleDay({ apiKey, model, context, budgets }) {
+  const text = `Build me one realistic example day of eating that hits my targets, so I can see how to map out meals.
+
+${context}
+
+Meal budgets (each meal should land within about 10% of its numbers):
+${budgets.map((b) => `- ${b.name}: ${b.kcal} kcal, ${b.p} g protein, ${b.c} g carbs, ${b.f} g fat`).join("\n")}
+
+Use exactly these meal names as slot. Give each meal a short appetizing title and 2-5 foods with everyday portions (oz, cups, tbsp, pieces) and the macros for that portion. Use simple foods that are easy to buy and prep, and keep the day varied. Add 2-3 short meal-planning tips.`;
+  const data = await askClaude({ apiKey, model, system: COACH_SYSTEM, schema: DAY_SCHEMA, content: [{ type: "text", text }], what: "example day" });
+  data.meals = (data.meals || []).map((m) => {
+    const items = (m.items || []).map((i) => ({
+      name: `${i.portion} ${i.food}`.trim(), kcal: Math.round(i.calories), p: Math.round(i.protein_g), c: Math.round(i.carbs_g), f: Math.round(i.fat_g),
+    }));
+    const total = items.reduce((t, x) => ({ kcal: t.kcal + x.kcal, p: t.p + x.p, c: t.c + x.c, f: t.f + x.f }), { kcal: 0, p: 0, c: 0, f: 0 });
+    return { slot: m.slot, title: m.title, items, total };
+  });
+  return data;
+}
+
 function round1(n) {
   return Math.round((Number(n) || 0) * 10) / 10;
 }

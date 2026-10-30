@@ -1,4 +1,5 @@
-import { estimateFood, readFitnessScreens, suggestMeals, reviewEating, prepareImage, MODELS, DEFAULT_MODEL } from "./ai.js?v=5";
+import { estimateFood, readFitnessScreens, suggestMeals, reviewEating, suggestExampleDay, prepareImage, MODELS, DEFAULT_MODEL } from "./ai.js?v=6";
+import { buildExampleDay, mealBudgets, MEAL_PATTERNS } from "./mealplan.js?v=1";
 
 /* =========================================================
    Storage
@@ -329,6 +330,7 @@ function renderToday() {
     </div>
     <div class="card">
       <div class="card-head"><h2>🧑‍🍳 Food coach</h2><span class="meta">by Claude</span></div>
+      <button class="btn" data-act="example-day" style="margin-bottom:8px">🗓️ Example day: map out ${dayGoal(today()).kcal} kcal</button>
       <div class="btn-row">
         <button class="btn secondary" data-act="coach-ideas">💡 What should I eat?</button>
         <button class="btn secondary" data-act="coach-review">📋 How am I eating?</button>
@@ -1391,6 +1393,81 @@ async function runReview() {
   renderReview();
 }
 
+/* ---------- Example day ---------- */
+const SLOT_EMO = (name) => (/breakfast/i.test(name) ? "🍳" : /lunch|meal 1/i.test(name) ? "🥗" : /dinner|meal 2/i.test(name) ? "🍽️" : "🍎");
+let exDay = null; // { seed, loading, error, claude }
+
+function openExampleDay() {
+  exDay = { seed: 0, loading: false, error: null, claude: null };
+  renderExampleDay();
+}
+
+function renderExampleDay() {
+  const p = P();
+  const pattern = p.mealPattern || "3+1";
+  const tg = computeTargets();
+  const targets = { kcal: tg.kcal, protein: tg.protein, carbs: tg.carbs, fat: tg.fat };
+  const budgets = mealBudgets(targets, pattern);
+  const built = buildExampleDay(targets, pattern, p.diet || [], exDay.seed);
+  const plan = exDay.claude
+    ? { meals: budgets.map((b) => ({ ...b, ...(exDay.claude.meals.find((m) => m.slot.toLowerCase() === b.name.toLowerCase()) || { title: "", items: [], total: { kcal: 0, p: 0, c: 0, f: 0 } }) })) }
+    : built;
+  plan.total = plan.meals.reduce((t, m) => ({ kcal: t.kcal + m.total.kcal, p: t.p + m.total.p, c: t.c + m.total.c, f: t.f + m.total.f }), { kcal: 0, p: 0, c: 0, f: 0 });
+  const pk = tg.protein * 4, ck = tg.carbs * 4, fk = tg.fat * 9;
+  const mac = (x) => `<span style="color:var(--protein)">P ${x.p}</span> · <span style="color:var(--carbs)">C ${x.c}</span> · <span style="color:var(--fat)">F ${x.f}</span>`;
+
+  const html = `${sheetTitle("Example day")}
+    <div class="slider-card">
+      <div class="top"><span><b class="num">${tg.kcal}</b> <span class="muted small">kcal/day</span></span><span class="small muted">your targets</span></div>
+      <div class="stack" aria-hidden="true"><i style="flex:${pk};background:var(--protein)"></i><i style="flex:${ck};background:var(--carbs)"></i><i style="flex:${fk};background:var(--fat)"></i></div>
+      <div class="stack-legend">
+        <div><span>🥩 Protein</span><b class="num">${tg.protein} g</b></div>
+        <div><span>🍞 Carbs</span><b class="num">${tg.carbs} g</b></div>
+        <div><span>🥑 Fat</span><b class="num">${tg.fat} g</b></div>
+      </div>
+    </div>
+    <div style="font-weight:600;margin:4px 2px 8px">How do you like to eat?</div>
+    <div class="chips" style="margin-bottom:14px">${Object.entries(MEAL_PATTERNS).map(([k, v]) => `<button class="chip ${pattern === k ? "on" : ""}" data-act="meal-pattern" data-v="${k}">${v.label}</button>`).join("")}</div>
+    ${exDay.loading ? `<div class="empty"><div class="spinner"></div>Claude is planning your day…</div>` : `
+      ${exDay.claude ? `<div class="note">✨ ${esc(exDay.claude.intro)}</div>` : `<div class="small muted" style="margin:0 2px 10px">Example foods${(p.diet || []).length ? ` (${esc(p.diet.join(", ").toLowerCase())})` : ""}. Swap in anything with similar numbers.</div>`}
+      ${exDay.error ? `<div class="note warn">${esc(exDay.error)}</div>` : ""}
+      ${plan.meals.map((m) => `<div class="card" style="margin-bottom:10px;padding:14px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><h3>${SLOT_EMO(m.name)} ${esc(m.name)}</h3><b class="num">${m.kcal} kcal</b></div>
+        <div class="small muted num" style="margin:2px 0 8px">Budget: ${mac(m)} g</div>
+        ${m.title ? `<div style="font-weight:600;margin-bottom:4px">${esc(m.title)}</div>` : ""}
+        ${m.items.map((i) => `<div style="display:flex;justify-content:space-between;gap:10px;font-size:14px;padding:3px 0"><span>${esc(i.name)}</span><span class="muted num" style="white-space:nowrap">${i.kcal}</span></div>`).join("") || `<div class="small muted">—</div>`}
+        <div class="small muted num" style="border-top:1px solid var(--line);margin-top:6px;padding-top:6px">≈ ${m.total.kcal} kcal · ${mac(m.total)} g</div>
+      </div>`).join("")}
+      <div class="note small num"><b>Day total ≈ ${plan.total.kcal} kcal</b> · ${mac(plan.total)} g<br>Portions are rounded to everyday amounts, so totals land close to, not exactly on, your targets.</div>
+      ${exDay.claude?.tips?.length ? `<div class="card" style="padding:12px 16px;margin-bottom:12px"><b>💡 Planning tips</b><ul style="margin:6px 0 0;padding-left:18px;display:grid;gap:4px;font-size:14px">${exDay.claude.tips.map((t) => `<li>${esc(t)}</li>`).join("")}</ul></div>` : ""}
+      <div class="btn-row">
+        <button class="btn secondary" data-act="ex-shuffle">🔀 Different foods</button>
+        <button class="btn" data-act="ex-claude">✨ Make one with Claude</button>
+      </div>`}`;
+  if ($("#sheet").hidden) openSheet(html, () => (exDay = null));
+  else { const st = $("#sheetBody").scrollTop; $("#sheetBody").innerHTML = html; $("#sheetBody").scrollTop = st; }
+}
+
+async function runExampleClaude() {
+  if (!state.apiKey) { closeSheet(); openAiSettings(); return; }
+  const p = P();
+  const tg = computeTargets();
+  const budgets = mealBudgets({ kcal: tg.kcal, protein: tg.protein, carbs: tg.carbs, fat: tg.fat }, p.mealPattern || "3+1");
+  exDay.loading = true; exDay.error = null;
+  renderExampleDay();
+  try {
+    const context = [`Daily targets: ${tg.kcal} kcal, ${tg.protein} g protein, ${tg.carbs} g carbs, ${tg.fat} g fat.`, dietLine(p), p.foodPrefs ? `Preferences and dislikes: ${p.foodPrefs}` : ""].filter(Boolean).join("\n");
+    const data = await suggestExampleDay({ apiKey: state.apiKey, model: state.model || DEFAULT_MODEL, context, budgets });
+    if (!exDay) return;
+    exDay.claude = data;
+  } catch (err) {
+    if (!exDay) return;
+    exDay.error = err.message;
+  }
+  exDay.loading = false;
+  renderExampleDay();
+}
+
 /* =========================================================
    Fitness
    ========================================================= */
@@ -2010,6 +2087,10 @@ document.addEventListener("click", (ev) => {
     case "coach-preset": coach.preset = v; renderCoach(); break;
     case "coach-save": saveCoach(); break;
     case "coach-ideas": openIdeas(); break;
+    case "example-day": openExampleDay(); break;
+    case "meal-pattern": p.mealPattern = v; save(); exDay.claude = null; renderExampleDay(); break;
+    case "ex-shuffle": exDay.claude = null; exDay.seed++; renderExampleDay(); break;
+    case "ex-claude": runExampleClaude(); break;
     case "edit-diet": openDiet(); break;
     case "diet": {
       p.diet ||= [];
