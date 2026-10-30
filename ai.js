@@ -258,6 +258,52 @@ export async function readFitnessScreens({ apiKey, model, images, todayYmd }) {
   return data;
 }
 
+/* ---------- Nutrition labels ---------- */
+
+const LABEL_SYSTEM = `You read Nutrition Facts panels from photos for a macro-tracking app.
+Copy the numbers exactly as printed for ONE serving. Do not estimate or adjust anything.
+- serving_size_text: the serving size line as printed, e.g. "2/3 cup (55g)".
+- serving_amount and serving_unit: the metric amount in parentheses, e.g. 55 and "g" (or "ml" for drinks). Use 0 and "" if no metric amount is printed.
+- Use 0 for any value that isn't visible. readable is false if the panel is too blurry, cut off or isn't a nutrition label.
+- allergens: the "Contains:" / allergen statement and any gluten-free claim, copied as printed, or "".
+- product_name: the product name if visible on the photo, otherwise a short generic name for the food.`;
+
+const LABEL_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["readable", "product_name", "serving_size_text", "serving_amount", "serving_unit", "servings_per_container", "calories", "protein_g", "carbs_g", "fat_g", "fiber_g", "sugar_g", "allergens"],
+  properties: {
+    readable: { type: "boolean" },
+    product_name: { type: "string" },
+    serving_size_text: { type: "string" },
+    serving_amount: { type: "number" },
+    serving_unit: { type: "string", enum: ["g", "ml", ""] },
+    servings_per_container: { type: "number" },
+    calories: { type: "number" },
+    protein_g: { type: "number" },
+    carbs_g: { type: "number" },
+    fat_g: { type: "number" },
+    fiber_g: { type: "number" },
+    sugar_g: { type: "number" },
+    allergens: { type: "string" },
+  },
+};
+
+/** Read a Nutrition Facts label (values per serving, as printed). */
+export async function readLabel({ apiKey, model, image }) {
+  const content = [
+    { type: "image", source: { type: "base64", media_type: image.mediaType, data: image.base64 } },
+    { type: "text", text: "Read this nutrition label." },
+  ];
+  const d = await askClaude({ apiKey, model, system: LABEL_SYSTEM, schema: LABEL_SCHEMA, content, what: "label reading" });
+  if (!d.readable) throw new Error("Couldn't read that label. Try again with the whole panel flat, in focus and without glare.");
+  return {
+    name: d.product_name, servText: d.serving_size_text, servAmt: d.serving_amount || 0, servUnit: d.serving_unit || "",
+    kcal: Math.round(d.calories), p: round1(d.protein_g), c: round1(d.carbs_g), f: round1(d.fat_g),
+    fiber: round1(d.fiber_g), sugar: round1(d.sugar_g), allergens: d.allergens || "",
+  };
+}
+
 /* ---------- Food coach ---------- */
 
 const COACH_SYSTEM = `You are a warm, practical nutrition coach inside a couple's personal macro-tracking app.
