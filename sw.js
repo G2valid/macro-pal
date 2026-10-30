@@ -1,9 +1,9 @@
 // Offline cache for the app shell. Bump VERSION when files change.
-const VERSION = "macropal-v2";
+const VERSION = "macropal-v3";
 const SHELL = ["./", "index.html", "styles.css", "app.js", "ai.js", "manifest.json", "icons/icon.svg", "icons/apple-touch-icon.png", "icons/icon-192.png", "icons/icon-512.png", "vendor/anthropic-sdk.js"];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: "reload" })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", (e) => {
@@ -17,9 +17,10 @@ self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
   const sameOrigin = url.origin === location.origin;
   if (!sameOrigin) return; // never touch API calls
-  // Network first so updates show up; fall back to cache offline.
+  // Network first (skipping the browser's HTTP cache) so updates show up
+  // all at once; fall back to the offline cache.
   e.respondWith(
-    fetch(e.request)
+    fetch(new Request(e.request, { cache: "no-cache" }))
       .then((res) => {
         if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(e.request, copy)); }
         return res;

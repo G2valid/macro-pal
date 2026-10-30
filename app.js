@@ -1,4 +1,4 @@
-import { estimateFood, readFitnessScreens, prepareImage, MODELS, DEFAULT_MODEL } from "./ai.js";
+import { estimateFood, readFitnessScreens, prepareImage, MODELS, DEFAULT_MODEL } from "./ai.js?v=3";
 
 /* =========================================================
    Storage
@@ -1630,5 +1630,11 @@ document.addEventListener("visibilitychange", () => {
 });
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
-  navigator.serviceWorker.register("sw.js").catch(() => {});
+  // When an update installs, reload once so every file is the new version.
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (hadController && !reloaded) { reloaded = true; location.reload(); }
+  });
+  navigator.serviceWorker.register("sw.js").then((r) => r.update()).catch(() => {});
 }
