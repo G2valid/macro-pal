@@ -16,6 +16,7 @@
 
 import { WHISKERS } from "./coaches/whiskers.js?v=1";
 import { BESTIE } from "./coaches/bestie.js?v=1";
+import { DJ } from "./coaches/dj.js?v=1";
 
 export const COACHES = {
   bestie: {
@@ -23,27 +24,9 @@ export const COACHES = {
     lines: BESTIE,
   },
   dj: {
-    name: "DJ Gains", emoji: "🎧", vibe: "Drops beats about your macros",
-    lines: {
-      morning: ["Gooood morning {name}! DJ Gains in the booth. Let's turn this day UP! 🔊", "Rise and grind, it's the morning mix! First track: breakfast."],
-      afternoon: ["Afternoon set is LIVE. Keep that tempo, {name}!", "Midday remix, you're still on beat! 🎶"],
-      evening: ["Evening chill mix spinning. Smooth finish tonight. 🌙", "Last set of the night. Bring it home, {name}."],
-      food: ["Track added to the playlist! 🎵", "Logged! That's going straight to the top of the charts.", "Ayyy, the macros are mixing nicely."],
-      protein: ["PROTEIN GOAL! DROP THE BASS! 🔊💪", "Protein hit! That's a platinum record, baby!"],
-      over: ["Little off-beat today, no stress. Tomorrow we remix. 🎧", "Everybody misses a beat. Next track's yours."],
-      onTrack: ["Perfect mix today, calories right on the beat! 🎚️", "Day mastered and mixed. Fade out. ✨"],
-      missed: ["Booth's quiet! Log a track and let's get this party started.", "Silence on the decks... what'd you eat, {name}?"],
-      workout: ["Workout logged! The crowd goes WILD! 🙌", "That workout was a certified banger."],
-      pr: ["NEW PR! That's a world tour, baby! 🏆🔊", "Personal record, encore, ENCORE!"],
-      week: ["Weekly goal hit. Album of the year! 💿", "Whole week on beat. Headliner status."],
-      weighDown: ["Scale dropped like the BASS. 📉🔊", "Down this week! Hit single!"],
-      weighUp: ["Little feedback on the speakers this week. Keep the set going. 🎧", "Scale's off-key today, the trend's still a bop."],
-      streak: ["{streak}-day streak, that's a long playlist! 🔥", "{streak} days straight on repeat. Love that song."],
-      water: ["Water goal done. Stay hydrated on the dance floor! 💧", "H2O tracklist complete!"],
-      tip: ["Pro mix tip: protein + fiber at every meal keeps the energy steady.", "Sleep is the cooldown track. Don't skip it.", "Pump up playlist = better workout. Science-ish. 🎶"],
-    },
+    name: "DJ Gains", emoji: "🎧", vibe: "A walking music encyclopedia. Expect deep cuts.",
+    lines: DJ,
   },
-
   drill: {
     name: "Drill Sergeant", emoji: "🪖", vibe: "Loud, no excuses (but secretly proud)",
     lines: {
