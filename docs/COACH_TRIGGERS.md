@@ -14,7 +14,7 @@ Reference for writing coach lines. The trigger engine lives in `triggers.js` (th
 Each trigger can also have `rare` lines (shown about 1 in 10 times) and `ultra` lines (about 1 in 50). A trigger can raise those odds, e.g. Sir Whiskers' goal-weight lines. In the CSV, use goal `rare` or `ultra`.
 
 ## Placeholders
-`{name}` `{streak}` `{protein_left}` `{kcal_left}` `{lbs_to_goal}` `{lbs_lost}` `{unit}` (lb or kg; the lbs_ values follow the person's units)
+`{name}` `{streak}` `{protein_left}` `{kcal_left}` `{lbs_to_goal}` `{lbs_lost}` `{unit}` `{atta}` ("Atta boy" / "Atta girl" from the profile) (lb or kg; the lbs_ values follow the person's units)
 
 ## Line file format
 CSV with columns `coach,trigger,goal,line`. goal is `lose`, `gain`, `maintain`, `any`, `rare` or `ultra`. If there's no line for the person's goal, the coach's `any` line is used, then the closest starter line. Several lines per trigger are picked at random.

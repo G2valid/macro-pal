@@ -20,6 +20,7 @@ import { DJ } from "./coaches/dj.js?v=1";
 import { DRILL } from "./coaches/drill.js?v=1";
 import { SURFER } from "./coaches/surfer.js?v=1";
 import { RICKY } from "./coaches/ricky.js?v=1";
+import { DAD } from "./coaches/dad.js?v=1";
 
 export const COACHES = {
   bestie: {
@@ -47,27 +48,9 @@ export const COACHES = {
     lines: RICKY,
   },
   dad: {
-    name: "Coach Dad", emoji: "👨", vibe: "Dad jokes, dad wisdom, dad sneakers",
-    lines: {
-      morning: ["Morning, {name}! Why did the egg go to the gym? To get egg-cellent abs.", "Rise and shine, kiddo. Breakfast is the most important meal of the day. Your mother and I agree."],
-      afternoon: ["Hi Hungry, I'm Dad. How's the day going?", "Afternoon, sport. Remember to drink water. And turn off the lights."],
-      evening: ["Evening, champ. Proud of you. Now go to bed, it's a school night.", "Why don't eggs tell jokes at night? They'd crack up. Goodnight!"],
-      food: ["Logged it! That's using your noodle. (Gluten-free noodle, if needed.)", "Nice log! You're on a roll. A whole-grain roll.", "Tracking? That's what I call a balanced meal plan... and a balanced joke."],
-      protein: ["Protein goal! You're really beefing up! 🥩", "Hit your protein! I'm not crying, you're crying."],
-      over: ["Over today? Don't sweat it. Your old man once ate a whole pie. Tomorrow's new.", "Bit over, no biggie. Even I go back for seconds at Thanksgiving."],
-      onTrack: ["Right on target! That's my kid!", "Calories on point. I'm telling the neighbors."],
-      missed: ["Haven't logged yet? I'm not mad, just disappointed. Kidding! Log a snack.", "What do you call a food log with nothing in it? Hungry. Go log something!"],
-      workout: ["Workout done! I'd high-five you but I pulled something.", "Great workout! Why did the scarecrow win an award? Outstanding in his field. Like you."],
-      pr: ["New PR! Want me to put it on the fridge?", "Personal record! Let me get the camcorder!"],
-      week: ["Whole week goal done! Ice cream's on me. Protein ice cream.", "That's a full week, kiddo. Proud dad moment."],
-      weighDown: ["Scale's down! That's a weight off my shoulders.", "Down this week! I'd say I'm proud but you know that."],
-      weighUp: ["Scale's up a bit. It's probably the scale. I'll get my toolbox.", "Small bump. Don't worry, it's water. Like the water bill I keep yelling about."],
-      streak: ["{streak} days straight! Consistency, just like my 6 a.m. alarm.", "{streak}-day streak! You get that from my side of the family."],
-      water: ["Water goal hit! You're well hydrated, unlike my lawn.", "All your water! I'm so proud I could mow something."],
-      tip: ["Tip: read the label. And turn off the lights when you leave the kitchen.", "Meal prep Sunday. Just like grilling Saturday. Essential.", "Walk after dinner. Great for digestion and for checking the neighbors' lawns."],
-    },
+    name: "Coach Dad", emoji: "👨", vibe: "Who touched the thermostat? (Secretly the warmest coach.)",
+    lines: DAD,
   },
-
   // Holiday guests (appear during their season; choose them any time)
   turkey: {
     name: "Tom the Turkey", emoji: "🦃", vibe: "Thanksgiving guest", season: "nov",
