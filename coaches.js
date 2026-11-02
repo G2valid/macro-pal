@@ -19,6 +19,7 @@ import { BESTIE } from "./coaches/bestie.js?v=1";
 import { DJ } from "./coaches/dj.js?v=1";
 import { DRILL } from "./coaches/drill.js?v=1";
 import { SURFER } from "./coaches/surfer.js?v=1";
+import { RICKY } from "./coaches/ricky.js?v=1";
 
 export const COACHES = {
   bestie: {
@@ -42,27 +43,9 @@ export const COACHES = {
     lines: WHISKERS,
   },
   popstar: {
-    name: "Ricky Rollerblade", emoji: "🎤", vibe: "A '90s pop heartthrob with frosted tips",
-    lines: {
-      morning: ["Yo yo yo {name}! It's gonna be a GREAT day, baby! 🎤", "Good mornin'! Time to rollerblade into breakfast!"],
-      afternoon: ["Afternoon check-in! You're totally all that and a bag of chips. (Baked chips.)", "Don't stop, get it, get it! Keep goin', {name}!"],
-      evening: ["Evening, superstar. Cue the slow-jam ballad. 🎶", "Time to wind down. Turn the lava lamp on."],
-      food: ["Logged! You're on fire like a frosted-tips hair dryer.", "Bye bye bye, guesswork! Hello tracking! 🎵", "That meal's a total hit single."],
-      protein: ["PROTEIN GOAL! Everybody, rock your body right! 💪", "Protein hit! You've got the right stuff, baby!"],
-      over: ["Over a bit? Hey, even boy bands miss a dance step. Tomorrow's the reunion tour.", "No scrubs, no stress. Tomorrow's a new day."],
-      onTrack: ["On target all day! That's what I call music! 🎶", "Calories on point, all-that status."],
-      missed: ["Hey {name}, nothing logged? Don't go chasin' waterfalls, go log your lunch!", "Hit me with a food log one more time!"],
-      workout: ["Workout done! You got the moves like a music video!", "That workout? Totally fly."],
-      pr: ["NEW PR! That's a platinum record, baby! 💿", "Personal record! Cue the confetti cannons!"],
-      week: ["Weekly goal crushed! Number one on the countdown!", "All week long! You're the MVP of the TRL countdown."],
-      weighDown: ["Scale's down! Bye bye bye, pounds! 👋", "Dropped this week! Totally radical!"],
-      weighUp: ["Scale's up? As if! It's just water, baby. Keep dancin'.", "Little bump. Every hit has a slow verse."],
-      streak: ["{streak}-day streak! That's a whole boxed CD set!", "{streak} days straight! Encore!"],
-      water: ["Water goal done! Stay hydrated on tour! 💧", "Hydrated like a frosted tip. Shiny."],
-      tip: ["Tip: dance in the kitchen while you cook. Cardio counts!", "Prep snacks in baggies like it's 1997.", "Protein smoothie = the boy band of breakfasts. Everyone loves it."],
-    },
+    name: "Ricky Rollerblade", emoji: "🎤", vibe: "A '90s pop heartthrob. Allegedly. Huge in Belgium.",
+    lines: RICKY,
   },
-
   dad: {
     name: "Coach Dad", emoji: "👨", vibe: "Dad jokes, dad wisdom, dad sneakers",
     lines: {
