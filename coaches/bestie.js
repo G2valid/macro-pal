@@ -814,6 +814,7 @@ export const BESTIE = {
   // ---------- Random small talk ----------
   random_smalltalk: {
     any: [
+      "Cupid won't show me the relationship files. THE LOVE INTERN is gatekeeping.",
       "BESTIEEEEEEE.",
       "Just checking in because I'm obsessed with your success.",
       "Quick question: why are we so iconic?",

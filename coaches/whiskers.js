@@ -710,6 +710,10 @@ export const WHISKERS = {
   // ---------- Random small talk, lore & coaching ----------
   random_smalltalk: {
     any: [
+      "The bird appears nervous. I find this suspicious. I require chicken. …Unless…",
+      "The red human possesses snacks. I approve.",
+      "The winged infant is irritating. Small.",
+      "The wheeled man keeps calling me 'talent.'",
       "My bowl is empty. I can see the bottom.",
       "I ate eleven minutes ago. Difficult times.",
       "I have decided to support your fitness journey. You're welcome.",

@@ -673,6 +673,7 @@ export const DAD = {
   // ---------- Random small talk & dad lore ----------
   random_smalltalk: {
     any: [
+      "Santa says he grills better than me. Sure you do, big guy.",
       "Who touched the thermostat? Seriously. It was set perfectly.",
       "Put on a sweatshirt. We're not heating the whole neighborhood.",
       "Close the door. Were you born in a barn? I'm not paying to air-condition the outside.",

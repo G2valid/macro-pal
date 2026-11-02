@@ -1,8 +1,8 @@
 import { estimateFood, readFitnessScreens, suggestMeals, reviewEating, suggestExampleDay, readLabel, generatePlan, prepareImage, MODELS, DEFAULT_MODEL } from "./ai.js?v=10";
 import { buildPlanPrompt, parsePlanReply, normalizePlan, groceryList, groceryText, fmtQty } from "./planner.js?v=1";
 import { buildExampleDay, mealBudgets, MEAL_PATTERNS } from "./mealplan.js?v=2";
-import { COACHES, DEFAULT_COACH, seasonalCoach, coachLine, guestChance, phaseLine } from "./coaches.js?v=10";
-import { TRIGGER_META, LINE_ID, FALLBACK, T } from "./triggers.js?v=3";
+import { COACHES, DEFAULT_COACH, seasonalCoach, coachLine, guestChance, phaseLine, inSeason } from "./coaches.js?v=12";
+import { TRIGGER_META, LINE_ID, FALLBACK, T } from "./triggers.js?v=4";
 
 /* =========================================================
    Storage
@@ -2580,7 +2580,7 @@ function coachSay(id, { force = false } = {}) {
   if (guest && guest !== who && Math.random() < guestChance(guest)) who = guest;
   const chain = [LINE_ID[id] || id];
   while (FALLBACK[chain[chain.length - 1]] && chain.length < 4) chain.push(FALLBACK[chain[chain.length - 1]]);
-  const text = (!force && phaseLine(who, chain[0])) || coachLine(who, chain, { goal: computeTargets().direction, vars: coachVars() });
+  const text = (!force && phaseLine(who, chain[0], new Date(), { status: cfg.valentine })) || coachLine(who, chain, { goal: computeTargets().direction, vars: coachVars() });
   if (!text) return false;
   const type = TRIGGER_META[id]?.type;
   if (!force) {
@@ -2771,6 +2771,8 @@ function openCoachPicker() {
     <h3 style="margin:16px 2px 8px">Holiday guests</h3>
     <div class="coach-grid">${all.filter(([, c]) => c.season).map(card).join("")}</div>
     <label class="field" style="display:flex;gap:8px;align-items:center;margin-top:12px"><input type="checkbox" id="coachHol" ${cfg.holidays ? "checked" : ""} style="width:auto"> <span style="font-weight:500">Holiday guests drop in during their season</span></label>
+    <div style="font-weight:600;margin:6px 2px 8px">💘 On Valentine's Day, Cupid should know I'm…</div>
+    <div class="seg">${[["skip", "Don't ask"], ["partnered", "Partnered"], ["single", "Single"]].map(([k, l]) => `<button class="${(cfg.valentine || "skip") === k ? "on" : ""}" data-act="coach-vday" data-v="${k}">${l}</button>`).join("")}</div>
     <div style="font-weight:600;margin:6px 2px 8px">How chatty?</div>
     <div class="seg">${[["off", "Off"], ["chill", "Chill"], ["normal", "Normal"], ["chatty", "Chatty"]].map(([k, l]) => `<button class="${cfg.freq === k ? "on" : ""}" data-act="coach-freq" data-v="${k}">${l}</button>`).join("")}</div>
     <button class="btn secondary" data-act="coach-preview">🔊 Hear from my coach</button>`, () => render());
@@ -2857,7 +2859,11 @@ document.addEventListener("click", (ev) => {
     case "coach-pick":
       p.coach = { ...coachCfg(), id: v }; save();
       document.querySelectorAll(".coach-card").forEach((b) => b.classList.toggle("on", b === t));
-      coachSay(v === "turkey" && new Date().getMonth() !== 10 ? "coach_picked_offseason" : "app_open_morning", { force: true });
+      coachSay(inSeason(v) ? "coach_picked" : "coach_picked_offseason", { force: true });
+      break;
+    case "coach-vday":
+      p.coach = { ...coachCfg(), valentine: v }; save();
+      document.querySelectorAll("[data-act=coach-vday]").forEach((b) => b.classList.toggle("on", b === t));
       break;
     case "coach-freq":
       p.coach = { ...coachCfg(), freq: v }; save();

@@ -14,14 +14,16 @@
 //   streak      logging streak milestone      water     water goal reached
 //   tip         random tip
 
-import { WHISKERS } from "./coaches/whiskers.js?v=1";
-import { BESTIE } from "./coaches/bestie.js?v=1";
+import { WHISKERS } from "./coaches/whiskers.js?v=2";
+import { BESTIE } from "./coaches/bestie.js?v=2";
 import { DJ } from "./coaches/dj.js?v=1";
 import { DRILL } from "./coaches/drill.js?v=1";
 import { SURFER } from "./coaches/surfer.js?v=1";
-import { RICKY } from "./coaches/ricky.js?v=1";
-import { DAD } from "./coaches/dad.js?v=1";
-import { TOM, TOM_PHASES, tomPhase } from "./coaches/tom.js?v=1";
+import { RICKY } from "./coaches/ricky.js?v=2";
+import { DAD } from "./coaches/dad.js?v=2";
+import { TOM, TOM_PHASES, tomPhase } from "./coaches/tom.js?v=2";
+import { SANTA, SANTA_PHASES, santaPhase } from "./coaches/santa.js?v=1";
+import { CUPID, CUPID_PHASES, VDAY_STATUS, cupidPhase } from "./coaches/cupid.js?v=1";
 
 export const COACHES = {
   bestie: {
@@ -60,29 +62,16 @@ export const COACHES = {
     phasesFor: (date) => { const p = tomPhase(date); return p === "day" ? ["day", "dayOver"] : p ? [p] : []; },
     phases: TOM_PHASES,
     guestChance: (date) => ({ early: 0.35, mid: 0.4, week: 0.6, eve: 0.85, day: 0.9, after: 0.85, dec1: 0.9 })[tomPhase(date)] ?? 0.35,
+    inSeason: (date) => date.getMonth() === 10 || (date.getMonth() === 11 && date.getDate() === 1),
   },
   santa: {
-    name: "Santa Claus", emoji: "🎅", vibe: "Christmas guest", season: "dec",
-    lines: {
-      morning: ["Ho ho ho, {name}! You're on the NICE list for logging!", "Good morning! The elves are proud of your progress."],
-      afternoon: ["Ho ho, afternoon check-in! Making a list, checking your macros twice.", "The reindeer and I say: keep going!"],
-      evening: ["Evening, {name}. Rest up like it's the night before Christmas. 🌙", "Ho ho ho, goodnight!"],
-      food: ["Logged! Another entry on the nice list. 🎁", "Ho ho, tracked! The elves are taking notes."],
-      protein: ["Protein goal! You're stronger than Rudolph! 🦌", "Ho ho HO! Protein hit!"],
-      over: ["A few too many cookies? I know the feeling. Tomorrow's a new day! 🍪", "Still on the nice list. Promise."],
-      onTrack: ["On target all day! Nicer than nice!", "Calories wrapped up perfectly. 🎀"],
-      missed: ["Haven't logged? Even Santa writes things down! Log a snack.", "My list is longer than your log today! Add something!"],
-      workout: ["Workout done! You'd make a great reindeer!", "Great workout! Climbing chimneys is my cardio."],
-      pr: ["NEW PR! That's the best present yet! 🎁", "Ho ho ho! Personal record!"],
-      week: ["Weekly goal done! Early present: pride!", "A whole week! Merry and mighty!"],
-      weighDown: ["Scale's down! Lighter than my sleigh after deliveries!", "Down this week! Jolly good!"],
-      weighUp: ["Holiday bump? I gain 20 lbs every December. It's fine.", "Up a little. Cookies happen. Back at it!"],
-      streak: ["{streak}-day streak! Like an advent calendar of awesome!", "{streak} days! Ho ho ho!"],
-      water: ["Water goal hit! Hydrated like fresh snow. ❄️", "All your water! Even the elves are impressed."],
-      tip: ["Party tip: eat protein before the party so cookies don't take over.", "Bring a healthy dish to share. You'll be the hero.", "Walk to see the Christmas lights. Festive cardio!"],
-    },
+    name: "Santa Claus", emoji: "🎅", vibe: "Christmas guest. Elite logistics, professional cookie eater.", season: "dec",
+    lines: SANTA,
+    phasesFor: (date) => { const p = santaPhase(date); return ["eveMorning", "eveNight", "christmas"].includes(p) ? [p, "holidayFood"] : p ? [p] : []; },
+    phases: SANTA_PHASES,
+    guestChance: (date) => ({ early: 0.35, busy: 0.45, dec23: 0.6, eveMorning: 0.85, eveNight: 0.85, christmas: 0.85 })[santaPhase(date)] ?? 0.35,
+    inSeason: (date) => date.getMonth() === 11 && date.getDate() <= 26,
   },
-
   bunny: {
     name: "Easter Bunny", emoji: "🐰", vibe: "Easter guest", season: "easter",
     lines: {
@@ -128,25 +117,13 @@ export const COACHES = {
   },
 
   cupid: {
-    name: "Cupid", emoji: "💘", vibe: "Valentine's guest", season: "feb",
-    lines: {
-      morning: ["Good morning, {name}! Love yourself today. 💕", "Morning! You two make a great team."],
-      afternoon: ["Afternoon! Sending arrows of motivation. 🏹", "How's my favorite couple doing?"],
-      evening: ["Evening! Date night? Share dessert, share the calories. 😉", "Goodnight, lovebirds."],
-      food: ["Logged! I love that for you. 💘", "Tracked with love!"],
-      protein: ["Protein goal! Love at first bite! 💪", "Protein hit! My heart!"],
-      over: ["Over a bit? Love yourself anyway. Tomorrow's new!", "Chocolate happens. Love wins."],
-      onTrack: ["On target! A perfect match!", "Calories and you: a love story."],
-      missed: ["Nothing logged? Your log misses you. Log something cute.", "Psst, log a snack! I'll be watching. 💕"],
-      workout: ["Workout done! Heart-healthy AND heart-eyes!", "Great workout! Cardio for the heart!"],
-      pr: ["New PR! Heart-stopping performance! 💘🏆", "Personal record! I'm swooning."],
-      week: ["Weekly goal done! Love is in the air!", "Whole week! Match made in heaven."],
-      weighDown: ["Scale's down! Love this progress! 💕", "Down this week! Heart eyes!"],
-      weighUp: ["Little bump? Love your body anyway. It's just water.", "Up a smidge. Still adorable."],
-      streak: ["{streak}-day streak! Committed relationship with your goals!", "{streak} days! True love!"],
-      water: ["Water goal hit! Glowing. 💧", "All your water! Love that glow."],
-      tip: ["Cook dinner together tonight. Romantic AND on-plan.", "Dark chocolate (70%+) is the Valentine's move.", "Walk together after dinner. Hold hands. Count steps."],
-    },
+    name: "Cupid", emoji: "💘", vibe: "Valentine's guest. Ancient matchmaker, deeply tired of humans.", season: "feb",
+    lines: CUPID,
+    phasesFor: (date) => { const p = cupidPhase(date); return p?.startsWith("vday") ? [p, "vdayFood"] : p ? [p] : []; },
+    phases: CUPID_PHASES,
+    statusLines: VDAY_STATUS,
+    guestChance: (date) => ({ early: 0.35, busy: 0.45, eve: 0.7, vdayMorning: 0.85, vdayEvening: 0.85, after: 0.8 })[cupidPhase(date)] ?? 0.35,
+    inSeason: (date) => date.getMonth() === 1 && date.getDate() <= 15,
   },
 };
 
@@ -167,7 +144,7 @@ export function seasonalCoach(date = new Date()) {
   if (m === 10) return "spooky";
   if (m === 11) return "turkey";
   if (m === 12 && d <= 26) return "santa";
-  if (m === 2 && d <= 14) return "cupid";
+  if (m === 2 && d <= 15) return "cupid";
   const e = easter(date.getFullYear());
   const diff = (date - e) / 864e5;
   if (diff >= -21 && diff <= 1) return "bunny";
@@ -203,14 +180,21 @@ export function guestChance(coachId, date = new Date()) {
 }
 
 /** Date-specific lines (e.g. Tom's Thanksgiving countdown) that take over a trigger today, if any. */
-export function phaseLine(coachId, trigger, date = new Date()) {
+export function phaseLine(coachId, trigger, date = new Date(), { status } = {}) {
   const c = COACHES[coachId];
   if (!c?.phasesFor) return null;
   for (const key of c.phasesFor(date)) {
     const ph = c.phases[key];
     if (ph && ph.triggers.includes(trigger) && Math.random() < ph.chance) {
-      return ph.lines[Math.floor(Math.random() * ph.lines.length)];
+      const lines = [...ph.lines, ...((ph.status && c.statusLines?.[status]) || [])];
+      return lines[Math.floor(Math.random() * lines.length)];
     }
   }
   return null;
+}
+
+/** Is this holiday coach in season (used for the "picked me in July?" line)? */
+export function inSeason(coachId, date = new Date()) {
+  const c = COACHES[coachId];
+  return c?.inSeason ? c.inSeason(date) : true;
 }
