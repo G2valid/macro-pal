@@ -427,6 +427,8 @@ export const SANTA = {
   // ---------- North Pole lore ----------
   random_smalltalk: {
     any: [
+      "The Easter Bunny says he has the harder route because he uses his legs. Ho ho ho. Try a rooftop in a blizzard, rabbit.",
+      "Bunny keeps saying I don't do cardio. I deliver to the entire planet in one night. That's cardio, Bunny.",
       "Ho ho ho. No reason. Just keeping morale up.",
       "The elves left dumbbells on the floor again. We're having a meeting.",
       "Rudolph curls in the squat rack. I've spoken to him. He claims the red nose grants diplomatic immunity. It does not.",

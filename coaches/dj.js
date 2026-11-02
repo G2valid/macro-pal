@@ -707,6 +707,7 @@ export const DJ = {
   // ---------- Random small talk ----------
   random_smalltalk: {
     any: [
+      "Made the Easter Bunny a cardio playlist. He ran through a wall. We adjusted the BPM. 🎧",
       "Today's a Steely Dan kind of day. Don't ask me to explain.",
       "I trust anyone who knows the bass line to Rio.",
       "Sir Whiskers says vinyl sounds the same as streaming. We are currently not speaking.",

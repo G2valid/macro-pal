@@ -1,7 +1,7 @@
 import { estimateFood, readFitnessScreens, suggestMeals, reviewEating, suggestExampleDay, readLabel, generatePlan, prepareImage, MODELS, DEFAULT_MODEL } from "./ai.js?v=10";
 import { buildPlanPrompt, parsePlanReply, normalizePlan, groceryList, groceryText, fmtQty } from "./planner.js?v=1";
 import { buildExampleDay, mealBudgets, MEAL_PATTERNS } from "./mealplan.js?v=2";
-import { COACHES, DEFAULT_COACH, seasonalCoach, coachLine, guestChance, phaseLine, inSeason } from "./coaches.js?v=12";
+import { COACHES, DEFAULT_COACH, seasonalCoach, coachLine, guestChance, phaseLine, inSeason } from "./coaches.js?v=13";
 import { TRIGGER_META, LINE_ID, FALLBACK, T } from "./triggers.js?v=4";
 
 /* =========================================================
@@ -2547,6 +2547,7 @@ function coachVars() {
     lbs_lost: toDispW(Math.max(0, (cur - p.startWeightKg) * toward)).toFixed(1),
     unit: wUnit(),
     atta: p.sex === "female" ? "Atta girl" : "Atta boy",
+    month: new Date().toLocaleString("en-US", { month: "long" }),
   };
 }
 

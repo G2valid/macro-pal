@@ -14,16 +14,17 @@
 //   streak      logging streak milestone      water     water goal reached
 //   tip         random tip
 
-import { WHISKERS } from "./coaches/whiskers.js?v=2";
-import { BESTIE } from "./coaches/bestie.js?v=2";
-import { DJ } from "./coaches/dj.js?v=1";
-import { DRILL } from "./coaches/drill.js?v=1";
-import { SURFER } from "./coaches/surfer.js?v=1";
-import { RICKY } from "./coaches/ricky.js?v=2";
-import { DAD } from "./coaches/dad.js?v=2";
-import { TOM, TOM_PHASES, tomPhase } from "./coaches/tom.js?v=2";
-import { SANTA, SANTA_PHASES, santaPhase } from "./coaches/santa.js?v=1";
-import { CUPID, CUPID_PHASES, VDAY_STATUS, cupidPhase } from "./coaches/cupid.js?v=1";
+import { WHISKERS } from "./coaches/whiskers.js?v=3";
+import { BESTIE } from "./coaches/bestie.js?v=3";
+import { DJ } from "./coaches/dj.js?v=2";
+import { DRILL } from "./coaches/drill.js?v=2";
+import { SURFER } from "./coaches/surfer.js?v=2";
+import { RICKY } from "./coaches/ricky.js?v=3";
+import { DAD } from "./coaches/dad.js?v=3";
+import { TOM, TOM_PHASES, tomPhase } from "./coaches/tom.js?v=3";
+import { SANTA, SANTA_PHASES, santaPhase } from "./coaches/santa.js?v=2";
+import { CUPID, CUPID_PHASES, VDAY_STATUS, cupidPhase } from "./coaches/cupid.js?v=2";
+import { BUNNY, BUNNY_PHASES, bunnyPhase } from "./coaches/bunny.js?v=1";
 
 export const COACHES = {
   bestie: {
@@ -73,25 +74,12 @@ export const COACHES = {
     inSeason: (date) => date.getMonth() === 11 && date.getDate() <= 26,
   },
   bunny: {
-    name: "Easter Bunny", emoji: "🐰", vibe: "Easter guest", season: "easter",
-    lines: {
-      morning: ["Hop hop, good morning {name}! 🌷", "Morning! I've hidden some protein around. Just kidding, log your breakfast."],
-      afternoon: ["Afternoon hop-in! How's the day?", "Keep hopping toward your goals!"],
-      evening: ["Evening! Time to hop into bed. 🌙", "Hoppy evening, friend!"],
-      food: ["Logged! Egg-cellent. 🥚", "Tracked! Some bunny loves you."],
-      protein: ["Protein goal! Egg-straordinary! 🥚💪", "Protein hit! Hop hop hooray!"],
-      over: ["Too many jelly beans? Happens to the best bunnies. Tomorrow!", "Hop back on track tomorrow. 🐰"],
-      onTrack: ["On target! Hoppy day!", "Perfectly balanced, like an egg on a spoon."],
-      missed: ["Nothing logged yet? Go on an egg hunt for your food log!", "Hop to it! Log something!"],
-      workout: ["Workout done! Look at those bunny hops!", "Great workout! I do 10,000 hops a day."],
-      pr: ["New PR! Golden egg achievement! 🥚✨", "Personal record! Hop hop HOORAY!"],
-      week: ["Weekly goal done! A basket full of wins!", "Whole week! Egg-ceptional."],
-      weighDown: ["Scale's down! Hoppy dance! 🐰", "Down this week! Egg-cellent work!"],
-      weighUp: ["Little bump? Chocolate eggs happen. Hop on!", "Up a smidge. It's just water, carrot top."],
-      streak: ["{streak}-day streak! That's a lot of eggs in a row!", "{streak} days! Hop-tastic!"],
-      water: ["Water goal hit! Fresh as spring rain. 🌧️", "All your water! Hoppy and hydrated."],
-      tip: ["Hard-boiled eggs = perfect grab-and-go protein.", "Carrots with hummus: bunny-approved snack.", "Spring walk! Fresh air counts."],
-    },
+    name: "Easter Bunny", emoji: "🐰", vibe: "Easter guest. Call him Bunny. Elite cardio, absurd legs, no control around mini eggs.", season: "easter",
+    lines: BUNNY,
+    phasesFor: (date) => { const p = bunnyPhase(date); return ["eve", "easter"].includes(p) ? [p, "easterFood"] : p ? [p] : []; },
+    phases: BUNNY_PHASES,
+    guestChance: (date) => ({ early: 0.3, twoWeeks: 0.4, week: 0.6, goodFriday: 0.8, eve: 0.85, easter: 0.9, after: 0.85 })[bunnyPhase(date)] ?? 0.3,
+    inSeason: (date) => bunnyPhase(date) !== null,
   },
 
   spooky: {
@@ -129,14 +117,6 @@ export const COACHES = {
 
 export const DEFAULT_COACH = "bestie";
 
-function easter(year) {
-  const a = year % 19, b = Math.floor(year / 100), c = year % 100, d = Math.floor(b / 4), e = b % 4;
-  const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
-  const i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
-  const month = Math.floor((h + l - 7 * m + 114) / 31), day = ((h + l - 7 * m + 114) % 31) + 1;
-  return new Date(year, month - 1, day);
-}
-
 /** Which holiday coach is in season on a date, if any. */
 export function seasonalCoach(date = new Date()) {
   const m = date.getMonth() + 1, d = date.getDate();
@@ -145,9 +125,7 @@ export function seasonalCoach(date = new Date()) {
   if (m === 11) return "turkey";
   if (m === 12 && d <= 26) return "santa";
   if (m === 2 && d <= 15) return "cupid";
-  const e = easter(date.getFullYear());
-  const diff = (date - e) / 864e5;
-  if (diff >= -21 && diff <= 1) return "bunny";
+  if (bunnyPhase(date)) return "bunny"; // 4 weeks before Easter through the day after
   return null;
 }
 

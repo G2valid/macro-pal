@@ -434,6 +434,7 @@ export const TOM = {
   // ---------- Small talk & lore ----------
   random_smalltalk: {
     any: [
+      "The Easter Bunny gets it. Finally. Someone understands. We started a support group. Seasonal Prey Animals Anonymous. Attendance: two.",
       "Quick question. What exactly is Thanksgiving? Nobody gives me a straight answer. Interesting. Very interesting.",
       "Why are there turkey decorations everywhere? Seems a little threatening.",
       "You don't see humans hanging pictures of cows before cheeseburger day. Do you? Is cheeseburger day real? Focus, Tom.",

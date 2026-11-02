@@ -767,6 +767,7 @@ export const DRILL = {
   // ---------- Random small talk & lore ----------
   random_smalltalk: {
     any: [
+      "I timed the rabbit's mile. ... We don't talk about it. RESPECT THE RABBIT.",
       "REPORT. No reason. I simply wanted you alert.",
       "Hype Bestie disrupted another briefing.",
       "DJ Gains has ignored three noise complaints.",

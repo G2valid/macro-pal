@@ -710,6 +710,8 @@ export const WHISKERS = {
   // ---------- Random small talk, lore & coaching ----------
   random_smalltalk: {
     any: [
+      "The rabbit appears athletic. Lean. ... Protein.",
+      "The rabbit called HR. I was simply observing. Intently. For several hours.",
       "The bird appears nervous. I find this suspicious. I require chicken. …Unless…",
       "The red human possesses snacks. I approve.",
       "The winged infant is irritating. Small.",
