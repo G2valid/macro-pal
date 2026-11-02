@@ -479,3 +479,9 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; }
 .grocery input { width: 22px; height: 22px; accent-color: var(--accent); flex: none; }
 .grocery .grow { flex: 1; }
 .grocery.got .grow { text-decoration: line-through; color: var(--ink-3); }
+
+/* Checkboxes keep their native look (the .field input reset hid the check mark) */
+.field input[type="checkbox"], input[type="checkbox"] {
+  -webkit-appearance: checkbox; appearance: auto; width: 22px; height: 22px; padding: 0; border: 0;
+  accent-color: var(--accent); flex: none;
+}
