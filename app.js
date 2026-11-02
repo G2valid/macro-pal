@@ -24,16 +24,18 @@ const PRESETS = {
   custom: { label: "Custom" },
 };
 const THEMES = {
-  ocean: { label: "Lagoon", g: ["#2dd4bf", "#0284c7"] },
-  sky: { label: "Ocean", g: ["#38bdf8", "#6366f1"] },
-  grape: { label: "Grape", g: ["#a855f7", "#4f46e5"] },
-  berry: { label: "Berry", g: ["#f472b6", "#9333ea"] },
-  candy: { label: "Candy", g: ["#f9a8d4", "#818cf8"] },
-  sunset: { label: "Sunset", g: ["#fb923c", "#e11d48"] },
-  fire: { label: "Fire", g: ["#fbbf24", "#dc2626"] },
-  forest: { label: "Lime", g: ["#a3e635", "#059669"] },
-  midnight: { label: "Midnight", g: ["#7c3aed", "#0891b2"] },
-  mono: { label: "Mono", g: ["#52525b", "#18181b"] },
+  ocean: { label: "Lagoon", g: ["#2dd4bf", "#06b6d4", "#2563eb"] },
+  sky: { label: "Ocean", g: ["#38bdf8", "#6366f1", "#a855f7"] },
+  grape: { label: "Grape", g: ["#c084fc", "#8b5cf6", "#4f46e5"] },
+  berry: { label: "Berry", g: ["#fb7185", "#ec4899", "#9333ea"] },
+  candy: { label: "Candy", g: ["#f9a8d4", "#c4b5fd", "#7dd3fc"] },
+  sunset: { label: "Sunset", g: ["#fcd34d", "#fb923c", "#e11d48"] },
+  fire: { label: "Fire", g: ["#fde047", "#f97316", "#dc2626"] },
+  forest: { label: "Lime", g: ["#bef264", "#22c55e", "#0d9488"] },
+  midnight: { label: "Midnight", g: ["#7c3aed", "#4338ca", "#0891b2"] },
+  mono: { label: "Mono", g: ["#71717a", "#3f3f46", "#18181b"] },
+  aurora: { label: "Aurora", g: ["#34d399", "#22d3ee", "#a78bfa"], dyn: true, dark: true },
+  synthwave: { label: "Synthwave", g: ["#fb923c", "#ec4899", "#7c3aed"], dyn: true, dark: true },
 };
 const MEAL_EMO = { Breakfast: "🍳", Lunch: "🥗", Dinner: "🍽️", Snacks: "🍿" };
 const WORKOUTS = {
@@ -184,7 +186,7 @@ function applyTheme() {
   if (mode === "auto") delete root.dataset.theme;
   else root.dataset.theme = mode;
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.content = (THEMES[p?.accent] || THEMES.ocean).g[1];
+  if (meta) meta.content = THEMES[p?.accent]?.dark ? "#0b0b18" : (THEMES[p?.accent] || THEMES.ocean).g[1];
 }
 
 /* =========================================================
@@ -621,9 +623,11 @@ function renderSettings() {
 
     <div class="section-label">Theme</div>
     <div class="card">
-      <div class="swatches">${Object.entries(THEMES).map(([k, t]) => `<button class="swatch ${p.accent === k ? "on" : ""}" data-act="accent" data-v="${k}"><i style="background:linear-gradient(135deg, ${t.g[0]}, ${t.g[1]})"></i>${t.label}</button>`).join("")}</div>
+      ${(() => { const sw = ([k, t]) => `<button class="swatch ${t.dyn ? "dyn" : ""} ${(p.accent || "ocean") === k ? "on" : ""}" data-act="accent" data-v="${k}"><i style="background:linear-gradient(135deg, ${t.g.join(", ")}${t.dyn ? `, ${t.g[0]}` : ""})"></i>${t.label}</button>`;
+        const all = Object.entries(THEMES);
+        return `<div class="swatches">${all.filter(([, t]) => !t.dyn).map(sw).join("")}<div class="swatch-label">✨ Animated</div>${all.filter(([, t]) => t.dyn).map(sw).join("")}</div>`; })()}
       <div class="seg" style="margin:14px 0 0">${["auto", "light", "dark"].map((m) => `<button class="${(p.mode || "auto") === m ? "on" : ""}" data-act="mode" data-v="${m}">${m === "auto" ? "Match phone" : m[0].toUpperCase() + m.slice(1)}</button>`).join("")}</div>
-      ${p.accent === "midnight" ? `<p class="hint" style="margin:8px 0 0">Midnight is always dark.</p>` : ""}
+      ${THEMES[p.accent]?.dark || p.accent === "midnight" ? `<p class="hint" style="margin:8px 0 0">${THEMES[p.accent].label} is always dark.</p>` : ""}
       <div style="font-weight:600;margin:14px 2px 8px">✨ Glow</div>
       <div class="seg" style="margin:0">${[["off", "Off"], ["on", "Glow"], ["neon", "Neon"]].map(([k, l]) => `<button class="${(p.glow || "on") === k ? "on" : ""}" data-act="glow" data-v="${k}">${l}</button>`).join("")}</div>
     </div>
