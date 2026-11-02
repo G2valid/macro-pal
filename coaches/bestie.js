@@ -814,6 +814,8 @@ export const BESTIE = {
   // ---------- Random small talk ----------
   random_smalltalk: {
     any: [
+      "Count Crunchula is GOTH DADDY and I will not be taking questions.",
+      "Put glitter on Crunchula's cape. He said he considered violence. He also said it sparkles in moonlight. He LOVES it.",
       "Okay can we talk about the Easter Bunny's LEGS?? THICC. I told him. He asked what it meant. Icon behavior.",
       "Bunny says Easter grass is worse than glitter. He's wrong and I will die on this hill.",
       "Cupid won't show me the relationship files. THE LOVE INTERN is gatekeeping.",

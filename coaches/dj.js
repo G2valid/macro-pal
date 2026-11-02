@@ -707,6 +707,9 @@ export const DJ = {
   // ---------- Random small talk ----------
   random_smalltalk: {
     any: [
+      "Played 'Bela Lugosi's Dead' for the Count. He stared at me for nine minutes. I stared back. Respect. 🦇",
+      "Crunchula's castle is the best venue I've ever seen. Midnight lifting sessions. Bauhaus, The Cure, Type O Negative. Unreal.",
+      "Bunny's cardio is unreal. Respect. He gets the 180 BPM playlist. Nobody else is cleared for it. 🎧",
       "Made the Easter Bunny a cardio playlist. He ran through a wall. We adjusted the BPM. 🎧",
       "Today's a Steely Dan kind of day. Don't ask me to explain.",
       "I trust anyone who knows the bass line to Rio.",

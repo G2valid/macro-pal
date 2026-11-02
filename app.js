@@ -1,8 +1,8 @@
 import { estimateFood, readFitnessScreens, suggestMeals, reviewEating, suggestExampleDay, readLabel, generatePlan, prepareImage, MODELS, DEFAULT_MODEL } from "./ai.js?v=10";
 import { buildPlanPrompt, parsePlanReply, normalizePlan, groceryList, groceryText, fmtQty } from "./planner.js?v=1";
 import { buildExampleDay, mealBudgets, MEAL_PATTERNS } from "./mealplan.js?v=2";
-import { COACHES, DEFAULT_COACH, seasonalCoach, coachLine, guestChance, phaseLine, inSeason } from "./coaches.js?v=13";
-import { TRIGGER_META, LINE_ID, FALLBACK, T } from "./triggers.js?v=4";
+import { COACHES, DEFAULT_COACH, seasonalCoach, coachLine, guestChance, phaseLine, inSeason } from "./coaches.js?v=15";
+import { TRIGGER_META, LINE_ID, FALLBACK, T } from "./triggers.js?v=5";
 
 /* =========================================================
    Storage
@@ -2641,6 +2641,7 @@ function foodTriggers(beforeTot, afterTot, firstToday, name = "") {
   const tg = dayGoal(today());
   const out = [firstToday ? "food_first_log" : "food_logged"];
   if (/turkey/i.test(name) && Math.random() < 0.5) out.push("food_turkey");
+  if (/garlic/i.test(name) && Math.random() < 0.5) out.push("food_garlic");
   const cb = beforeTot.kcal / tg.kcal, ca = afterTot.kcal / tg.kcal;
   const calBand = (r) => (r > T.calOverLarge ? 4 : r > 1 ? 3 : r >= T.calHit ? 2 : r >= T.calClose ? 1 : 0);
   const bb = calBand(cb), ba = calBand(ca);

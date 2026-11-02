@@ -434,6 +434,8 @@ export const TOM = {
   // ---------- Small talk & lore ----------
   random_smalltalk: {
     any: [
+      "Why does the vampire keep LOOKING at me? 'Merely observing.' STOP OBSERVING.",
+      "People look at Bunny and me differently around the holidays. He gets it. Whiskers is banned from our meetings.",
       "The Easter Bunny gets it. Finally. Someone understands. We started a support group. Seasonal Prey Animals Anonymous. Attendance: two.",
       "Quick question. What exactly is Thanksgiving? Nobody gives me a straight answer. Interesting. Very interesting.",
       "Why are there turkey decorations everywhere? Seems a little threatening.",

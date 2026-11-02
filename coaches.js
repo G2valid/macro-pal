@@ -14,17 +14,18 @@
 //   streak      logging streak milestone      water     water goal reached
 //   tip         random tip
 
-import { WHISKERS } from "./coaches/whiskers.js?v=3";
-import { BESTIE } from "./coaches/bestie.js?v=3";
-import { DJ } from "./coaches/dj.js?v=2";
-import { DRILL } from "./coaches/drill.js?v=2";
-import { SURFER } from "./coaches/surfer.js?v=2";
-import { RICKY } from "./coaches/ricky.js?v=3";
-import { DAD } from "./coaches/dad.js?v=3";
-import { TOM, TOM_PHASES, tomPhase } from "./coaches/tom.js?v=3";
-import { SANTA, SANTA_PHASES, santaPhase } from "./coaches/santa.js?v=2";
-import { CUPID, CUPID_PHASES, VDAY_STATUS, cupidPhase } from "./coaches/cupid.js?v=2";
-import { BUNNY, BUNNY_PHASES, bunnyPhase } from "./coaches/bunny.js?v=1";
+import { WHISKERS } from "./coaches/whiskers.js?v=4";
+import { BESTIE } from "./coaches/bestie.js?v=4";
+import { DJ } from "./coaches/dj.js?v=4";
+import { DRILL } from "./coaches/drill.js?v=4";
+import { SURFER } from "./coaches/surfer.js?v=3";
+import { RICKY } from "./coaches/ricky.js?v=4";
+import { DAD } from "./coaches/dad.js?v=4";
+import { TOM, TOM_PHASES, tomPhase } from "./coaches/tom.js?v=5";
+import { SANTA, SANTA_PHASES, santaPhase } from "./coaches/santa.js?v=4";
+import { CUPID, CUPID_PHASES, VDAY_STATUS, cupidPhase } from "./coaches/cupid.js?v=3";
+import { CRUNCHULA, CRUNCHULA_PHASES, crunchulaPhase } from "./coaches/spooky.js?v=1";
+import { BUNNY, BUNNY_PHASES, bunnyPhase } from "./coaches/bunny.js?v=3";
 
 export const COACHES = {
   bestie: {
@@ -83,25 +84,12 @@ export const COACHES = {
   },
 
   spooky: {
-    name: "Count Crunchula", emoji: "🧛", vibe: "Halloween guest", season: "oct",
-    lines: {
-      morning: ["Good evening... er, morning, {name}. I vant to see your breakfast. 🦇", "Rise from your coffin! It's a new day!"],
-      afternoon: ["Afternoon... the sun is dreadful, but your progress is not.", "Bwahaha, keep going, mortal!"],
-      evening: ["Ahh, nightfall. My favorite. Rest well. 🌙", "Goodnight, mortal. Beware of midnight snacks."],
-      food: ["Logged! Delightfully spooky. 🎃", "Tracked! I vant to log your macros. Done."],
-      protein: ["Protein goal! You're stronger than a werewolf! 🐺", "Bwahaha! Protein hit!"],
-      over: ["Too much candy? A Halloween classic. Tomorrow we rise again!", "Fear not! Fresh start tomorrow."],
-      onTrack: ["On target! Frighteningly good!", "Calories in check. Spooktacular!"],
-      missed: ["Your log is as empty as a haunted house! Log something!", "Boo! Nothing logged yet!"],
-      workout: ["Workout done! You ran like a zombie was chasing you!", "Great workout! Monster mash approved."],
-      pr: ["NEW PR! Spooktacular! 🏆🎃", "Personal record! Even the ghosts are clapping."],
-      week: ["Weekly goal done! Fang-tastic!", "Whole week! Bwahaha, glorious!"],
-      weighDown: ["Scale's down! Boo-yah! 👻", "Down this week! Fang-tastic!"],
-      weighUp: ["Scale's up? Candy corn's fault. Not yours.", "A little bump. Don't be scared, it's water."],
-      streak: ["{streak}-day streak! Frightfully consistent!", "{streak} days! I'm batty about it."],
-      water: ["Water goal hit! I'll stick to... tomato juice. 🍅", "All your water! Hydrated and haunting."],
-      tip: ["Candy tip: pick your favorite, enjoy a few, skip the ones you don't love.", "Pumpkin is low-cal and high fiber. Very on brand.", "Pumpkin seeds = spooky-good protein snack."],
-    },
+    name: "Count Crunchula", emoji: "🧛", vibe: "Halloween guest. Ancient vampire, Lord of the Iron Crypt. Has never seen his own pump.", season: "oct",
+    lines: CRUNCHULA,
+    phasesFor: (date) => { const p = crunchulaPhase(date); return p === "halloween" ? [p, "halloweenFood"] : p ? [p] : []; },
+    phases: CRUNCHULA_PHASES,
+    guestChance: (date) => ({ early: 0.35, mid: 0.4, week: 0.6, eve: 0.8, halloween: 0.9, nov1: 0.85 })[crunchulaPhase(date)] ?? 0.35,
+    inSeason: (date) => crunchulaPhase(date) !== null,
   },
 
   cupid: {
@@ -121,7 +109,7 @@ export const DEFAULT_COACH = "bestie";
 export function seasonalCoach(date = new Date()) {
   const m = date.getMonth() + 1, d = date.getDate();
   if (m === 12 && d === 1) return "turkey"; // Tom's farewell
-  if (m === 10) return "spooky";
+  if (m === 10 || (m === 11 && d === 1)) return "spooky"; // Crunchula gets Nov 1 to mourn
   if (m === 11) return "turkey";
   if (m === 12 && d <= 26) return "santa";
   if (m === 2 && d <= 15) return "cupid";

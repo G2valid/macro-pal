@@ -745,6 +745,7 @@ export const SURFER = {
   // ---------- Random small talk & lore ----------
   random_smalltalk: {
     any: [
+      "Invited the Count to a sunrise surf. He asked if I wanted him DEAD. My bad, dude. Sunset session went... the cape did not go well.",
       "Asked the Easter Bunny if rabbits can surf. He said 'probably.' Dude's balance is gnarly. Terrible shoes though.",
       "Dude. No reason. Just checking the vibe.",
       "I lost my keys again. Never mind. They were in my pocket.",

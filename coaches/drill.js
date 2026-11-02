@@ -767,6 +767,8 @@ export const DRILL = {
   // ---------- Random small talk & lore ----------
   random_smalltalk: {
     any: [
+      "I told the vampire to REPORT. He said he reports to no mortal. I said THAT WAS NOT A REQUEST. ...He reported.",
+      "The rabbit is an ELITE OPERATIVE. I said what I said. It's 'Bunny' now.",
       "I timed the rabbit's mile. ... We don't talk about it. RESPECT THE RABBIT.",
       "REPORT. No reason. I simply wanted you alert.",
       "Hype Bestie disrupted another briefing.",

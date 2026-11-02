@@ -673,6 +673,8 @@ export const DAD = {
   // ---------- Random small talk & dad lore ----------
   random_smalltalk: {
     any: [
+      "The vampire said he was an immortal creature of darkness. I said shoes off in the house. He took his shoes off.",
+      "Fixed the Count's coffin hinge. Little WD-40, couple screws. Man's been sleeping on a squeaky hinge for three hundred years.",
       "Built the Easter Bunny a basket rack. Used plywood I've been saving for seventeen years. Told your mother it'd come in handy.",
       "Gave the Easter Bunny some carrots. Pretty sure he gave 'em to the reindeer. Rude. Efficient, but rude.",
       "Santa says he grills better than me. Sure you do, big guy.",

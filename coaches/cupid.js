@@ -394,6 +394,7 @@ export const CUPID = {
   // ---------- Lore & gossip ----------
   random_smalltalk: {
     any: [
+      "Count Crunchula is terrified of my arrows because they're WOODEN. Best thing that's happened to me in centuries.",
       "I tried shooting the Easter Bunny once. He jumped over it. Legs. Unbelievable legs. I'm still annoyed.",
       "Darling. We need to talk. Not about you. For once.",
       "Someone texted their ex last night. I can't name names. Confidentiality. It was Ricky. Forget I said that.",

@@ -710,6 +710,10 @@ export const WHISKERS = {
   // ---------- Random small talk, lore & coaching ----------
   random_smalltalk: {
     any: [
+      "The pale one talks too much.",
+      "The pale one claims to be Lord of something. I said 'quiet.' He was quiet.",
+      "I have acquired the pale one's cape. It is warm. It is mine now.",
+      "I stared behind the pale one last night. He checked twice. Good.",
       "The rabbit appears athletic. Lean. ... Protein.",
       "The rabbit called HR. I was simply observing. Intently. For several hours.",
       "The bird appears nervous. I find this suspicious. I require chicken. …Unless…",

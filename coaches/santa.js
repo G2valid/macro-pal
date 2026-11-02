@@ -427,6 +427,9 @@ export const SANTA = {
   // ---------- North Pole lore ----------
   random_smalltalk: {
     any: [
+      "Crunchula and I go way back. 'Still wearing the cape?' 'Still wearing the hat?' Fair. Ho ho ho.",
+      "Did I beat the Count at arm wrestling? A gentleman doesn't say. Ho ho ho.",
+      "Bunny should stop complaining. He gets spring weather. I get a blizzard and a chimney. Ho ho ho.",
       "The Easter Bunny says he has the harder route because he uses his legs. Ho ho ho. Try a rooftop in a blizzard, rabbit.",
       "Bunny keeps saying I don't do cardio. I deliver to the entire planet in one night. That's cardio, Bunny.",
       "Ho ho ho. No reason. Just keeping morale up.",

@@ -56,6 +56,7 @@ export const TRIGGERS = [
   ["meal_plan_meal_logged", "small"],
   ["grocery_list_finished", "small"],
   ["food_turkey", "small"],
+  ["food_garlic", "small"],
   ["food_first_log", "small"],
   ["food_logged", "small"],
   ["monday_open", "small"],
@@ -80,7 +81,7 @@ export const LINE_ID = { day_under_calories_positive: "day_under_calories", day_
 
 // Until a coach has lines for a trigger, borrow its closest line (followed as a chain).
 export const FALLBACK = {
-  day_under_calories_way: "day_under_calories", calories_low_late: "missed", food_turkey: "food_logged",
+  day_under_calories_way: "day_under_calories", calories_low_late: "missed", food_turkey: "food_logged", food_garlic: "food_logged",
   coach_picked_offseason: "coach_picked", coach_picked: "app_open_morning",
   app_open_morning: "morning", app_open_afternoon: "afternoon", app_open_evening: "evening", app_open_late: "evening",
   monday_open: "morning", friday_open: "afternoon", weekend_open: "morning",

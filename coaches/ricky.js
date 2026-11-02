@@ -695,6 +695,7 @@ export const RICKY = {
   // ---------- Random small talk & lore ----------
   random_smalltalk: {
     any: [
+      "Count Crunchula came to my '94 show. HE ADMITTED IT. He left after eleven minutes but that's basically a standing ovation for him.",
       "The Easter Bunny was in my 1993 music video. He says he wasn't born yet. That's what the LABEL wants him to think.",
       "I performed at the North Pole Christmas Gala in '96. Private event. Santa says he was there. That's not how I remember it.",
       "Cupid and I go way back. Barcelona, '91. He says he wasn't there. That's not how I remember it.",

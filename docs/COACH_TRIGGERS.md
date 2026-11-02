@@ -37,6 +37,7 @@ Coach IDs: bestie, dj, drill, surfer, cat, popstar, dad, turkey, santa, bunny, s
 | `return_after_7_days` | First open after 7+ days with no food logged | big |
 | `food_first_log` | First food logged today | small |
 | `food_logged` | Any later food logged (repeats) | small |
+| `food_garlic` | A logged food mentions garlic (50% chance, once a day; Count Crunchula has lines, others say a normal food line) | small |
 | `calories_close` | Calories cross 85% of goal | small |
 | `calories_hit` | Calories land at 95–100% of goal | big |
 | `calories_over_small` | Calories go over goal, up to +10% | nudge |
