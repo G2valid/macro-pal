@@ -34,7 +34,5 @@ Create an API key at console.anthropic.com and paste it into Settings → Photo 
 - `vendor/anthropic-sdk.js`: bundled `@anthropic-ai/sdk` 1.3.0
 - `sw.js`: offline cache. Bump `VERSION` when you change files.
 
-Data lives in the browser's localStorage on each device. Two phones don't sync with each other.
+Data lives only on each device (localStorage, plus IndexedDB for progress photos). Nothing is stored online; the only network calls are to Claude for photo, label and coach features.
 
-## Partner link (in progress)
-`supabase/schema.sql` creates the tables for linking two people, challenges and cheers, with row-level security. Only a small daily summary is shared; food logs, measurements, photos and cycle data stay on the device.
