@@ -1,7 +1,8 @@
 import { estimateFood, readFitnessScreens, suggestMeals, reviewEating, suggestExampleDay, readLabel, generatePlan, prepareImage, MODELS, DEFAULT_MODEL } from "./ai.js?v=10";
 import { buildPlanPrompt, parsePlanReply, normalizePlan, groceryList, groceryText, fmtQty } from "./planner.js?v=1";
 import { buildExampleDay, mealBudgets, MEAL_PATTERNS } from "./mealplan.js?v=2";
-import { COACHES, DEFAULT_COACH, seasonalCoach, coachLine } from "./coaches.js?v=1";
+import { COACHES, DEFAULT_COACH, seasonalCoach, coachLine } from "./coaches.js?v=2";
+import { TRIGGER_META, LINE_ID, FALLBACK, T } from "./triggers.js?v=1";
 
 /* =========================================================
    Storage
@@ -361,17 +362,6 @@ function renderToday() {
     $("#quickLogText").blur();
     openAdd(null, text);
   });
-
-  // Celebrate hitting the protein goal (once per day).
-  if (isToday && tg.protein && tot.p >= tg.protein) {
-    p.celebrated ||= {};
-    if (p.celebrated.protein !== currentDay) {
-      p.celebrated.protein = currentDay;
-      save();
-      confetti();
-      if (!coachSay("protein")) toast("Protein goal hit! 💪");
-    }
-  }
 }
 
 /* Tiny confetti burst */
@@ -806,10 +796,7 @@ function openWeightSheet() {
     const prevWeekly = weeklyWeights().filter((w) => w.date < date).pop();
     logWeight(fromDispW(v), date);
     save(); closeSheet(); render(); toast("Weight logged");
-    if (prevWeekly && parseYmd(date).getDay() === (P().weighDay ?? 1)) {
-      const diff = fromDispW(v) - prevWeekly.kg;
-      if (Math.abs(diff) > 0.05) coachQueue(diff < 0 === P().goalWeightKg < P().startWeightKg ? "weighDown" : "weighUp");
-    }
+    coachFire(weighTriggers(fromDispW(v), date, prevWeekly));
   });
 }
 
@@ -915,20 +902,13 @@ function bindQuick() {
 
 function addEntry(en, { saveFood = true, ai = false } = {}) {
   const day = ensureDay();
-  const before = totals(day.entries).kcal;
+  const beforeTot = totals(day.entries);
   const firstToday = currentDay === today() && !day.entries.length;
   const entry = { id: uid(), meal: addState?.meal || defaultMeal(), ...en, ai };
   day.entries.push(entry);
   if (saveFood) rememberFood(en);
   save();
-  if (currentDay === today()) {
-    const goal = dayGoal(today()).kcal;
-    const after = totals(day.entries).kcal;
-    const st = streakDays();
-    if (before <= goal && after > goal) coachQueue("over");
-    else if (firstToday && [3, 5, 7, 10, 14, 21, 30, 50, 75, 100].includes(st)) coachQueue("streak");
-    else coachQueue("food");
-  }
+  if (currentDay === today()) coachFire(foodTriggers(beforeTot, totals(day.entries), firstToday));
   return entry;
 }
 function rememberFood(en) {
@@ -1810,6 +1790,11 @@ function bindPlanner() {
   document.querySelectorAll("[data-gkey]").forEach((cb) => cb.addEventListener("change", () => {
     state.plan.checked[cb.dataset.gkey] = cb.checked || undefined;
     cb.closest(".grocery").classList.toggle("got", cb.checked);
+    const all = groceryList(state.plan).flatMap((a) => a.items);
+    if (cb.checked && all.length && all.every((i) => state.plan.checked[i.key]) && !state.plan.groceryDone) {
+      state.plan.groceryDone = true;
+      coachFire("grocery_list_finished");
+    }
     save();
   }));
 }
@@ -1892,6 +1877,7 @@ function logPlanMeal(key) {
   if (date !== today()) currentDay = prevDay;
   (plan.logged ||= {})[`${date}|${id}|${me}`] = 1;
   save();
+  if (date === today()) coachFire("meal_plan_meal_logged");
   toast(`Logged ${m.title} ✅`);
 }
 
@@ -1992,7 +1978,7 @@ function recordLabel(key, r) {
   const dist = imperial() ? `${r1(r.value)} mi` : `${r1(r.value * MI)} km`;
   return { out: `${r.value} kJ output`, min: `${r.value} min`, kcal: `${r.value} kcal`, dist, steps: `${r.value.toLocaleString()} steps` }[kind];
 }
-const fitSnapshot = () => ({ rec: recordMap(), week: weekTotals(currentDay) });
+const fitSnapshot = (date = currentDay) => ({ rec: recordMap(), week: weekTotals(date), steps: dayData(date).activity?.steps || 0 });
 
 /** Celebrate new personal records and a newly reached weekly goal. */
 function celebrateFitness(before, date = currentDay, addedWorkout = false) {
@@ -2012,8 +1998,18 @@ function celebrateFitness(before, date = currentDay, addedWorkout = false) {
   if (wins.length || hitGoal) {
     confetti();
     setTimeout(() => toast(wins.length ? `🏆 New PR! ${wins[0]}` : "🎯 Weekly activity goal reached!"), 300);
-    coachQueue(wins.length ? "pr" : "week");
-  } else if (addedWorkout) coachQueue("workout");
+  }
+  const out = [];
+  if (wins.length) out.push("workout_pr");
+  if (date === today()) {
+    if (hitGoal) out.push("weekly_workout_hit");
+    const frac = (w) => Math.max(w.workouts / goal.workouts, w.minutes / goal.minutes);
+    if (before.week.start === wk.start && frac(before.week) < 0.5 && frac(wk) >= 0.5) out.push("weekly_workout_halfway");
+    if (addedWorkout) out.push("workout_logged");
+    const sg = P().stepGoal || 8000;
+    out.push(crossed(before.steps / sg, (dayData(date).activity?.steps || 0) / sg, [[T.half, "steps_halfway"], [T.close, "steps_close"], [1, "steps_hit"]]));
+  }
+  coachFire(out);
 }
 
 function miniRing(val, goal, label, sub) {
@@ -2273,7 +2269,7 @@ function saveShots() {
   const date = r.date || currentDay;
   const day = ensureDay(date);
   day.workouts ||= [];
-  const snap = { rec: recordMap(), week: weekTotals(date) };
+  const snap = fitSnapshot(date);
   let added = 0;
   for (const w of r.workouts) {
     const dup = day.workouts.some((x) => (x.title || "") === (w.title || "") && x.minutes === w.minutes && x.kcal === w.kcal);
@@ -2533,42 +2529,74 @@ function openCycle() {
    Coach pop-ups (pre-written lines from coaches.js)
    ========================================================= */
 const COACH_FREQ = { off: 0, chill: 2, normal: 6, chatty: 20 };
-const BIG_EVENTS = ["protein", "pr", "week", "weighDown", "weighUp", "streak", "over"];
+const REPEATABLE = new Set(["food_logged", "workout_logged", "workout_pr", "meal_plan_meal_logged", "random_smalltalk"]);
 const coachCfg = (p = P()) => ({ id: DEFAULT_COACH, freq: "normal", holidays: true, ...(p?.coach || {}) });
+const LB_KG = LB;
 
 function coachVars() {
   const p = P();
   const tg = dayGoal(today());
   const tot = totals(dayData(today()).entries);
-  return { name: p.name, streak: streakDays(), protein_left: Math.max(0, r0(tg.protein - tot.p)), kcal_left: Math.max(0, r0(tg.kcal - tot.kcal)) };
+  const weekly = weeklyWeights();
+  const cur = weekly.length ? weekly[weekly.length - 1].kg : latestWeightKg();
+  const toward = Math.sign(p.goalWeightKg - p.startWeightKg) || 1;
+  return {
+    name: p.name, streak: streakDays(),
+    protein_left: Math.max(0, r0(tg.protein - tot.p)), kcal_left: Math.max(0, r0(tg.kcal - tot.kcal)),
+    lbs_to_goal: toDispW(Math.abs(p.goalWeightKg - cur)).toFixed(1),
+    lbs_lost: toDispW(Math.max(0, (cur - p.startWeightKg) * toward)).toFixed(1),
+    unit: wUnit(),
+  };
 }
 
-/** Show a coach line for an event, respecting the chosen frequency. */
-function coachSay(event, { force = false } = {}) {
+function coachToday() {
+  const p = P();
+  const log = (p.coachLog ||= {});
+  if (log.date !== today()) Object.assign(log, { date: today(), small: 0, nudges: 0, last: 0, fired: {} });
+  log.fired ||= {};
+  return log;
+}
+
+/** Can this trigger show right now under the user's chattiness setting? */
+function coachAllowed(id, log, cfg) {
+  const meta = TRIGGER_META[id];
+  if (!meta || !COACH_FREQ[cfg.freq]) return false;
+  if (!REPEATABLE.has(id) && log.fired[id]) return false;
+  if (meta.type === "small") return log.small < COACH_FREQ[cfg.freq] && Date.now() - log.last > 90e3;
+  if (meta.type === "nudge") return log.nudges < T.nudgesPerDay;
+  return true; // big & huge always
+}
+
+/** Show one specific trigger (used by the queue, and by previews with force). */
+function coachSay(id, { force = false } = {}) {
   const p = P();
   if (!p) return false;
   const cfg = coachCfg();
-  const cap = COACH_FREQ[cfg.freq] ?? 6;
-  if (!cap && !force) return false;
-  const log = (p.coachLog ||= {});
-  if (log.date !== today()) Object.assign(log, { date: today(), count: 0, last: 0 });
-  const big = BIG_EVENTS.includes(event);
-  if (!force && !big && (log.count >= cap || Date.now() - log.last < 90e3)) return false;
-  let id = cfg.id;
+  const log = coachToday();
+  if (!force && !coachAllowed(id, log, cfg)) return false;
+  let who = cfg.id;
   const guest = cfg.holidays && !force && seasonalCoach();
-  if (guest && guest !== id && Math.random() < 0.35) id = guest;
-  const text = coachLine(id, event, coachVars());
+  if (guest && guest !== who && Math.random() < 0.35) who = guest;
+  const lineId = LINE_ID[id] || id;
+  const text = coachLine(who, lineId, { goal: computeTargets().direction, vars: coachVars(), fallback: FALLBACK[lineId] });
   if (!text) return false;
-  log.count++; log.last = Date.now();
+  const type = TRIGGER_META[id]?.type;
+  if (!force) {
+    if (!REPEATABLE.has(id)) log.fired[id] = 1;
+    if (type === "small") { log.small++; log.last = Date.now(); }
+    if (type === "nudge") log.nudges++;
+  }
   save();
-  showCoach(id, text, guest === id && cfg.id !== id);
+  showCoach(who, text, guest === who && cfg.id !== who, id);
+  if (type === "huge" || id === "protein_hit" || id === "workout_pr") confetti();
   return true;
 }
 
 let coachTimer;
-function showCoach(id, text, isGuest) {
+function showCoach(id, text, isGuest, trigger = "") {
   const c = COACHES[id];
   const el = $("#coachPop");
+  el.dataset.trigger = trigger;
   el.innerHTML = `<span class="coach-av">${c.emoji}</span><div class="coach-txt"><b>${esc(c.name)}${isGuest ? ` <span class="coach-guest">Guest</span>` : ""}</b><span>${esc(text)}</span></div>`;
   el.hidden = false;
   el.classList.remove("coach-in"); void el.offsetWidth; el.classList.add("coach-in");
@@ -2578,37 +2606,150 @@ function showCoach(id, text, isGuest) {
 
 $("#coachPop").addEventListener("click", () => { $("#coachPop").hidden = true; });
 
-// Collect events fired in quick succession (e.g. adding 3 items) and say the most important one.
-let coachPending = null, coachPendingTimer;
-const PRIORITY = { pr: 9, week: 8, protein: 7, streak: 6, over: 5, weighDown: 5, weighUp: 5, workout: 4, water: 3, food: 1 };
-function coachQueue(event) {
-  if (!coachPending || (PRIORITY[event] || 0) > (PRIORITY[coachPending] || 0)) coachPending = event;
+// Triggers that fire together (one meal can hit protein, calories and a streak)
+// are collected briefly; the most important one that's allowed gets shown.
+let coachPending = new Set(), coachPendingTimer;
+function coachFire(...ids) {
+  for (const id of ids.flat(Infinity)) if (id && TRIGGER_META[id]) coachPending.add(id);
   clearTimeout(coachPendingTimer);
-  coachPendingTimer = setTimeout(() => { const e = coachPending; coachPending = null; coachSay(e); }, 700);
+  coachPendingTimer = setTimeout(flushCoach, 700);
+}
+function flushCoach(delay = 0) {
+  const ids = [...coachPending];
+  coachPending = new Set();
+  if (!P() || !ids.length) return;
+  const log = coachToday();
+  const cfg = coachCfg();
+  const ok = ids.filter((id) => coachAllowed(id, log, cfg)).sort((x, y) => TRIGGER_META[y].rank - TRIGGER_META[x].rank);
+  // Threshold triggers only happen once a day, even when a bigger one was shown instead.
+  for (const id of ids) if (!REPEATABLE.has(id) && id !== ok[0]) log.fired[id] = 1;
+  save();
+  if (ok.length) setTimeout(() => coachSay(ok[0]), delay);
 }
 
-/** Greeting / nudge / tip when the app is opened. */
+/* ---- Trigger checks ---- */
+function crossed(before, after, steps) {
+  // steps: [[fraction, id], ...]; every step crossed by this change (the queue ranks them)
+  return steps.filter(([f]) => before < f && after >= f).map(([, id]) => id);
+}
+
+function foodTriggers(beforeTot, afterTot, firstToday) {
+  const p = P();
+  const tg = dayGoal(today());
+  const out = [firstToday ? "food_first_log" : "food_logged"];
+  const cb = beforeTot.kcal / tg.kcal, ca = afterTot.kcal / tg.kcal;
+  const calBand = (r) => (r > T.calOverLarge ? 4 : r > 1 ? 3 : r >= T.calHit ? 2 : r >= T.calClose ? 1 : 0);
+  const bb = calBand(cb), ba = calBand(ca);
+  if (ba > bb) out.push([null, "calories_close", "calories_hit", "calories_over_small", "calories_over_large"][ba]);
+  out.push(crossed(beforeTot.p / tg.protein, afterTot.p / tg.protein,
+    [[T.proHalf, "protein_halfway"], [T.proClose, "protein_close"], [1, "protein_hit"], [T.proOver, "protein_over"]]));
+  if (firstToday) {
+    const st = streakDays();
+    if (T.streakMilestones.includes(st)) out.push(`logging_streak_${st}`);
+    const mem = (p.coachMem ||= {});
+    if (mem.comeback) { out.push("streak_comeback"); mem.comeback = false; }
+  }
+  return out;
+}
+
+function lastLogBefore(date) {
+  const days = Object.entries(P().days || {}).filter(([d, v]) => d < date && v.entries?.length).map(([d]) => d).sort();
+  return days[days.length - 1] || null;
+}
+function streakEndingOn(date) {
+  let n = 0, d = date;
+  while ((P().days?.[d]?.entries || []).length) { n++; d = addDays(d, -1); }
+  return n;
+}
+const recentlyUsed = (fn) => Array.from({ length: 7 }, (_, i) => dayData(addDays(today(), -1 - i))).some(fn);
+
+/** Checks that run whenever the app is opened. */
 function coachOnOpen() {
   const p = P();
-  if (!p || coachCfg().freq === "off") return;
-  const h = new Date().getHours();
-  const part = h < 12 ? "morning" : h < 17 ? "afternoon" : "evening";
-  const seen = (p.coachSeen ||= {});
-  const key = `${today()}-${part}`;
-  const day = dayData(today());
-  let event = null;
-  if (!seen[key]) {
-    seen[key] = 1;
-    event = part;
-    if (part === "afternoon" && !day.entries.length) event = "missed";
-    if (part === "evening" && day.entries.length) {
-      const tg = dayGoal(today()); const tot = totals(day.entries);
-      if (tot.kcal >= tg.kcal * 0.85 && tot.kcal <= tg.kcal * 1.05) event = "onTrack";
+  if (!p || !COACH_FREQ[coachCfg().freq]) return;
+  const mem = (p.coachMem ||= {});
+  const t = today();
+  const now = new Date();
+  const h = now.getHours();
+  const day = dayData(t);
+  const out = [];
+  const firstOpen = mem.lastOpen !== t;
+  mem.lastOpen = t;
+
+  if (firstOpen) {
+    const last = lastLogBefore(t);
+    const yesterday = addDays(t, -1);
+    if (last) {
+      const missed = Math.round((parseYmd(t) - parseYmd(last)) / 864e5) - 1;
+      if (missed >= 7) out.push("return_after_7_days");
+      else if (missed >= 2) out.push("return_after_2_days");
+      if (last < yesterday) {
+        const len = streakEndingOn(last);
+        if (len >= T.streakBrokenMin && mem.brokenFor !== last) { out.push("streak_broken"); mem.brokenFor = last; mem.comeback = true; }
+      }
     }
-    for (const k of Object.keys(seen)) if (!k.startsWith(today())) delete seen[k];
-    save();
-  } else if (Math.random() < 0.3) event = "tip";
-  if (event) setTimeout(() => coachSay(event), 1200);
+    const yd = dayData(yesterday);
+    if (yd.entries.length) {
+      const yGoal = dayGoal(yesterday).kcal;
+      if (totals(yd.entries).kcal < yGoal * T.calHit) {
+        const dir = computeTargets().direction;
+        out.push(dir === "lose" ? "day_under_calories_positive" : dir === "gain" ? "day_under_calories_nudge" : "day_under_calories_small");
+      }
+    }
+    const wd = now.getDay();
+    if (wd === 1) out.push("monday_open");
+    else if (wd === 5) out.push("friday_open");
+    else if (wd === 0 || wd === 6) out.push("weekend_open");
+  }
+  const part = h >= T.nightStart || h < T.nightEnd ? "late" : h < 12 ? "morning" : h < 17 ? "afternoon" : "evening";
+  out.push(`app_open_${part}`);
+
+  if (h >= T.afternoonCutoff && h < T.nightStart && !day.entries.length) out.push("nothing_logged_afternoon");
+  if (h >= T.lateHour) {
+    const tg = dayGoal(t);
+    if (day.entries.length && totals(day.entries).p < tg.protein * T.proLowLate) out.push("protein_low_late");
+    const active = (d) => (d.workouts || []).length || d.activity?.steps;
+    if (!active(day) && recentlyUsed(active)) out.push("steps_low_late");
+    const wg = p.waterGoal || 8;
+    if ((day.water || 0) < wg * 0.5 && recentlyUsed((d) => d.water > 0)) out.push("water_low_late");
+  }
+  if (!firstOpen && Math.random() < 0.25) out.push("random_smalltalk");
+  save();
+  for (const id of out) coachPending.add(id);
+  clearTimeout(coachPendingTimer);
+  coachPendingTimer = setTimeout(() => flushCoach(), 1200);
+}
+
+/** Weekly weigh-in checks: first, up/down/flat, and goal milestones. */
+function weighTriggers(newKg, date, prevWeekly) {
+  const p = P();
+  if (parseYmd(date).getDay() !== (p.weighDay ?? 1)) return [];
+  const mem = (p.coachMem ||= {});
+  const out = [];
+  if (!prevWeekly) {
+    if (!mem.firstWeekly) { out.push("weigh_in_first"); mem.firstWeekly = true; }
+  } else {
+    const diffLb = (newKg - prevWeekly.kg) / LB_KG;
+    out.push(Math.abs(diffLb) <= T.flatLb ? "weigh_in_flat" : diffLb < 0 ? "weigh_in_down" : "weigh_in_up");
+  }
+  const start = p.startWeightKg, goal = p.goalWeightKg;
+  const total = Math.abs(goal - start);
+  if (total > 0.5) {
+    const key = `${start.toFixed(2)}|${goal.toFixed(2)}`; // a new goal resets milestones
+    const ms = ((mem.milestones ||= {})[key] ||= {});
+    const toward = Math.sign(goal - start);
+    const progress = (newKg - start) * toward;
+    const frac = progress / total;
+    const remainingLb = (total - progress) / LB_KG;
+    if (frac >= 1 && !ms.reached) { out.push("weight_goal_reached"); ms.reached = 1; }
+    else if (remainingLb > 0 && remainingLb <= T.goalCloseLb && !ms.close) { out.push("weight_goal_close"); ms.close = 1; }
+    for (const [f, id] of [[0.75, "weight_75_percent"], [0.5, "weight_halfway"], [0.25, "weight_25_percent"]]) {
+      if (frac >= f && !ms[id]) { out.push(id); ms[id] = 1; }
+    }
+    const fives = Math.floor(progress / LB_KG / T.milestoneLb);
+    if (fives > (ms.fives || 0)) { out.push("weight_5lb_milestone"); ms.fives = fives; }
+  }
+  return out;
 }
 
 function openCoachPicker() {
@@ -2710,13 +2851,13 @@ document.addEventListener("click", (ev) => {
     case "coach-pick":
       p.coach = { ...coachCfg(), id: v }; save();
       document.querySelectorAll(".coach-card").forEach((b) => b.classList.toggle("on", b === t));
-      coachSay("morning", { force: true });
+      coachSay("app_open_morning", { force: true });
       break;
     case "coach-freq":
       p.coach = { ...coachCfg(), freq: v }; save();
       document.querySelectorAll("[data-act=coach-freq]").forEach((b) => b.classList.toggle("on", b === t));
       break;
-    case "coach-preview": coachSay(["tip", "food", "protein", "workout", "streak"][Math.floor(Math.random() * 5)], { force: true }); break;
+    case "coach-preview": coachSay(["random_smalltalk", "food_logged", "protein_hit", "workout_logged", "logging_streak_7", "weigh_in_down"][Math.floor(Math.random() * 6)], { force: true }); break;
     case "example-day": openExampleDay(); break;
     case "meal-pattern": p.mealPattern = v; save(); exDay.claude = null; renderExampleDay(); break;
     case "ex-shuffle": exDay.claude = null; exDay.seed++; renderExampleDay(); break;
@@ -2823,7 +2964,8 @@ document.addEventListener("click", (ev) => {
       const was = day.water || 0;
       day.water = Math.max(0, was + Number(t.dataset.n));
       save(); render();
-      if (was < (p.waterGoal || 8) && day.water >= (p.waterGoal || 8)) coachQueue("water");
+      const wg = p.waterGoal || 8;
+      if (currentDay === today()) coachFire(crossed(was / wg, day.water / wg, [[T.half, "water_halfway"], [T.close, "water_close"], [1, "water_hit"]]));
       break;
     }
     case "copy-yesterday": {

@@ -1,5 +1,8 @@
 // Coach personalities and their pre-written lines.
 // Add or edit lines freely. Placeholders: {name} {streak} {protein_left} {kcal_left}
+// {lbs_to_goal} {lbs_lost} {unit}. Lines can also be split by goal:
+//   protein_hit: { lose: [...], gain: [...], maintain: [...], any: [...] }
+// Trigger IDs are listed in triggers.js; the short event names below are the starter set.
 //
 // Events:
 //   morning / afternoon / evening  greeting when the app opens
@@ -301,11 +304,20 @@ export function seasonalCoach(date = new Date()) {
   return null;
 }
 
-/** Pick a line for an event, filling in placeholders. */
-export function coachLine(coachId, event, vars = {}) {
-  const c = COACHES[coachId] || COACHES[DEFAULT_COACH];
-  const list = c.lines[event] || COACHES[DEFAULT_COACH].lines[event] || [];
-  if (!list.length) return null;
+/**
+ * Pick a line for a trigger, filling in placeholders.
+ * A coach's lines[trigger] can be a list, or { lose, gain, maintain, any } lists.
+ * Falls back to the trigger's starter event, then to the default coach.
+ */
+export function coachLine(coachId, trigger, { goal = "any", vars = {}, fallback = null } = {}) {
+  const pickFrom = (entry) => {
+    if (!entry) return null;
+    if (Array.isArray(entry)) return entry.length ? entry : null;
+    return [entry[goal], entry.any].find((l) => l?.length) || null;
+  };
+  const tryCoach = (c) => c && (pickFrom(c.lines[trigger]) || (fallback && pickFrom(c.lines[fallback])));
+  const list = tryCoach(COACHES[coachId]) || tryCoach(COACHES[DEFAULT_COACH]);
+  if (!list) return null;
   const line = list[Math.floor(Math.random() * list.length)];
   return line.replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? ""));
 }
