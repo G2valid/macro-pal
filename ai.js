@@ -20,6 +20,7 @@ How to work:
 - If a detail would change the total meaningfully (cooking oil or butter, dressing or sauce, portion size, milk type, hidden ingredients, how much was actually eaten), ask up to 3 short clarifying questions, each with 2-4 tappable answer options. Ask nothing if the estimate is already solid.
 - If the user has already answered questions, use the answers and do not ask the same things again.
 - If there is no food in the photo, return no items and say so in notes.
+- With no photo, split the description into separate items, use the amounts given (grams, oz, cups, pieces, "half", etc.), and assume typical portions when none are given.
 - Portions should be written in everyday units (e.g. "1 cup", "6 oz", "2 slices").
 - notes: one or two sentences on key assumptions. Be plain and friendly.`;
 
@@ -109,14 +110,17 @@ function loadImg(file) {
  * @param {Array<{question:string, answer:string}>} o.answers  answers to earlier questions
  * @param {object|null} o.previous  the previous estimate, when refining
  */
-export async function estimateFood({ apiKey, model, image, description, answers = [], previous = null, diet = [] }) {
+export async function estimateFood({ apiKey, model, image, description, answers = [], previous = null, diet = [], known = "" }) {
   const content = [];
   if (image) {
     content.push({ type: "image", source: { type: "base64", media_type: image.mediaType, data: image.base64 } });
   }
   let text = description?.trim()
-    ? `Description from the user: ${description.trim()}`
+    ? `${image ? "Description from the user" : "The user typed or dictated what they ate (no photo)"}: ${description.trim()}`
     : "Estimate the food in this photo.";
+  if (known) {
+    text += `\n\nFoods the user has saved, with exact nutrition. When they mention one of these, use these numbers scaled to the amount they say:\n${known}`;
+  }
   if (diet.length) {
     text += `\n\nThe user's dietary needs: ${diet.join(", ")}. If any item likely conflicts (e.g. bread, pasta, breading or soy sauce for gluten-free), say so briefly in notes.`;
   }

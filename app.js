@@ -1,4 +1,4 @@
-import { estimateFood, readFitnessScreens, suggestMeals, reviewEating, suggestExampleDay, readLabel, prepareImage, MODELS, DEFAULT_MODEL } from "./ai.js?v=7";
+import { estimateFood, readFitnessScreens, suggestMeals, reviewEating, suggestExampleDay, readLabel, prepareImage, MODELS, DEFAULT_MODEL } from "./ai.js?v=8";
 import { buildExampleDay, mealBudgets, MEAL_PATTERNS } from "./mealplan.js?v=1";
 
 /* =========================================================
@@ -321,6 +321,10 @@ function renderToday() {
         </div>
       </div>
     </div>
+    ${state.apiKey ? `<form class="quicklog" id="quickLog">
+      <input id="quickLogText" class="input" enterkeyhint="send" autocomplete="off" placeholder="✍️ Type or 🎤 say what you ate">
+      <button class="quicklog-go" aria-label="Log it">➜</button>
+    </form>` : ""}
     ${needsWeigh ? `<button class="banner pop" data-act="log-weight"><span class="big-emo">⚖️</span><div><b>It's weigh-in day!</b><span>Log your weekly number to track real progress.</span></div></button>` : ""}
     <div class="card macros">
       <div class="card-head" style="margin-bottom:0"><h2>Macros</h2><button class="icon-q" data-act="edit-macros" aria-label="What are macros?">?</button></div>
@@ -345,6 +349,14 @@ function renderToday() {
     </div>
     <button class="btn secondary" data-act="copy-yesterday">Copy yesterday's meals</button>
   `;
+
+  $("#quickLog")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = $("#quickLogText").value.trim();
+    if (!text) return;
+    $("#quickLogText").blur();
+    openAdd(null, text);
+  });
 
   // Celebrate hitting the protein goal (once per day).
   if (isToday && tg.protein && tot.p >= tg.protein) {
@@ -646,7 +658,7 @@ function profileForm(p, isNew) {
   const nearestPace = paceOpts.reduce((a, b) => (Math.abs(b[0] - curPace) < Math.abs(a[0] - curPace) ? b : a))[0];
 
   return `
-  ${isNew && !Object.keys(state.profiles).length ? `<div class="welcome"><img class="logo" src="icons/icon.svg" alt=""><h2>Welcome to Macro Pal</h2><p>A few quick details and we'll set your daily calorie and macro targets.</p></div><br>` : sheetTitle(isNew ? "Add a person" : "Body stats & goal", true)}
+  ${isNew && !Object.keys(state.profiles).length ? `<div class="welcome"><img class="logo" src="icons/icon.svg" alt=""><h2>Welcome to Bite Club</h2><p>A few quick details and we'll set your daily calorie and macro targets.</p></div><br>` : sheetTitle(isNew ? "Add a person" : "Body stats & goal", true)}
   <form id="profileForm" autocomplete="off">
     <label class="field"><span>Name</span><input name="name" required maxlength="24" value="${esc(p?.name || "")}" placeholder="Your name"></label>
     <div class="seg" data-units>${["imperial", "metric"].map((u) => `<button type="button" class="${(p?.units || "imperial") === u ? "on" : ""}" data-units-v="${u}">${u === "imperial" ? "lb / ft" : "kg / cm"}</button>`).join("")}</div>
@@ -791,9 +803,12 @@ function openWeightSheet() {
    ========================================================= */
 let addState = null;
 
-function openAdd(meal) {
-  addState = { meal: meal || defaultMeal(), mode: "photo", q: "" };
+function openAdd(meal, text = "") {
+  addState = { meal: meal || defaultMeal(), mode: state.apiKey ? "type" : "foods", q: "" };
+  photo = { image: null, est: null, answers: {}, desc: text };
   renderAdd();
+  if (text && state.apiKey) runEstimate(false);
+  else setTimeout(() => $("#photoDesc")?.focus(), 250);
 }
 
 function mealPicker() {
@@ -801,8 +816,9 @@ function mealPicker() {
 }
 
 function renderAdd() {
-  const modes = [["photo", "📷 Photo"], ["label", "🏷️ Label"], ["foods", "My foods"], ["quick", "Quick add"]];
+  const modes = [["type", "✍️ Type it"], ["photo", "📷 Photo"], ["label", "🏷️ Label"], ["foods", "My foods"], ["quick", "Manual"]];
   let body = "";
+  if (addState.mode === "type") body = typeBody();
   if (addState.mode === "photo") body = photoBody();
   if (addState.mode === "label") body = labelBody();
   if (addState.mode === "foods") body = foodsBody();
@@ -815,6 +831,11 @@ function renderAdd() {
   else $("#sheetBody").innerHTML = html;
   if (addState.mode === "foods") bindFoodSearch();
   if (addState.mode === "label") bindLabel();
+  if (addState.mode === "type") {
+    $("#photoDesc")?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); runEstimate(false); }
+    });
+  }
   if (addState.mode === "quick") bindQuick();
 }
 
@@ -893,6 +914,26 @@ function rememberFood(en) {
   if (!f) { f = { id: uid(), uses: 0 }; p.foods.push(f); }
   Object.assign(f, { name: en.name, portion: en.portion, kcal: en.kcal, p: en.p, c: en.c, f: en.f, lastUsed: Date.now() });
   f.uses = (f.uses || 0) + 1;
+}
+
+/** "Just type or say it": free text, parsed by Claude, reviewed with the photo UI. */
+function typeBody() {
+  if (!state.apiKey) {
+    return `<div class="note">Typing or saying what you ate uses Claude. Add your Anthropic API key once in <b>Settings → API key</b>.</div><button class="btn" data-act="edit-ai">Set up Claude</button>`;
+  }
+  if (!photo) photo = { image: null, est: null, answers: {}, desc: "" };
+  if (photo.loading || photo.est) return photoBody();
+  return `<label class="field"><span>What did you eat?</span>
+      <textarea id="photoDesc" rows="3" enterkeyhint="send" placeholder="e.g. 2 eggs, a slice of toast with butter and a black coffee">${esc(photo.desc)}</textarea></label>
+    <p class="hint" style="margin-top:-6px">🎤 Tap the microphone on your keyboard to just say it. Amounts help: "85 g granola", "6 oz chicken", "half a burrito".</p>
+    ${photo.error ? `<div class="note warn">${esc(photo.error)}</div>` : ""}
+    <button class="btn" data-act="run-estimate">✨ Log it</button>`;
+}
+
+/** Saved foods with exact numbers, so "85 g of my granola" uses the label. */
+function knownFoodsText() {
+  const foods = [...(P().foods || [])].sort((a, b) => (b.uses || 0) - (a.uses || 0)).slice(0, 40);
+  return foods.map((f) => `- ${f.name}: ${f.kcal} kcal, P ${f.p} g, C ${f.c} g, F ${f.f} g per ${f.label?.servText || f.portion || "serving"}`).join("\n");
 }
 
 /* ---------- Nutrition label + scale ---------- */
@@ -1047,7 +1088,7 @@ function photoBody() {
           <label style="color:var(--fat)">Fat<input class="input num" data-k="f" type="number" inputmode="decimal" value="${it.f}"></label>
         </div></div>`).join("") || `<div class="empty">No food found. Try another photo or add a description.</div>`}</div>
     ${est.items.length ? `<div class="ai-total num"><span>Total</span><span>${r0(tot.kcal)} kcal · P ${r0(tot.p)} · C ${r0(tot.c)} · F ${r0(tot.f)}</span></div>
-    <button class="btn" data-act="ai-add">Add ${est.items.length > 1 ? `all ${est.items.length} items` : "to log"}</button>` : ""}
+    <button class="btn sticky-add" data-act="ai-add">Add ${est.items.length > 1 ? `all ${est.items.length} items` : "to log"}</button>` : ""}
     <button class="btn secondary" data-act="ai-reset">Start over</button>`;
 }
 
@@ -1068,7 +1109,7 @@ function syncAiEdits() {
 async function runEstimate(refine = false) {
   const descEl = $("#photoDesc");
   if (descEl) photo.desc = descEl.value;
-  if (!photo.image && !photo.desc.trim()) return toast("Add a photo or a description first.");
+  if (!photo.image && !photo.desc.trim()) return toast(addState?.mode === "type" ? "Type what you ate first." : "Add a photo or a description first.");
   let answers = [], previous = null;
   if (refine) {
     syncAiEdits();
@@ -1082,7 +1123,7 @@ async function runEstimate(refine = false) {
   try {
     const est = await estimateFood({
       apiKey: state.apiKey, model: state.model || DEFAULT_MODEL,
-      image: photo.image, description: photo.desc, answers, previous, diet: P().diet || [],
+      image: photo.image, description: photo.desc, answers, previous, diet: P().diet || [], known: photo.image ? "" : knownFoodsText(),
     });
     if (!photo) return; // sheet was closed
     photo.est = est; photo.answers = {};
@@ -1310,7 +1351,7 @@ function exportData() {
   const blob = new Blob([JSON.stringify({ ...state, apiKey: "" }, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `macropal-backup-${today()}.json`;
+  a.download = `biteclub-backup-${today()}.json`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
@@ -1325,7 +1366,7 @@ $("#importInput").addEventListener("change", async (e) => {
     state = { ...data, apiKey: state.apiKey, model: data.model || state.model };
     if (!state.profiles[state.activeId]) state.activeId = Object.keys(state.profiles)[0];
     save(); render(); toast("Backup restored");
-  } catch { toast("That file isn't a Macro Pal backup."); }
+  } catch { toast("That file isn't a Bite Club backup."); }
 });
 
 $("#photoInput").addEventListener("change", async (e) => {
@@ -2173,7 +2214,7 @@ document.addEventListener("click", (ev) => {
     case "day-today": currentDay = today(); render(); break;
     case "open-add":
       if (tab === "fitness" && !t.dataset.meal) { openFitnessAdd(); break; }
-      photo = null; lbl = null; openAdd(t.dataset.meal); break;
+      lbl = null; openAdd(t.dataset.meal); break;
     case "open-import": shots ? (shots = { images: [], loading: false, error: null, result: null }, renderImport()) : (closeSheet(), openImport()); break;
     case "pick-shots": $("#shotInput").click(); break;
     case "run-shots": runShots(); break;
@@ -2283,7 +2324,7 @@ document.addEventListener("click", (ev) => {
       break;
     }
     case "ai-rm": syncAiEdits(); photo.est.items.splice(Number(t.dataset.i), 1); renderAdd(); break;
-    case "ai-reset": photo = null; renderAdd(); break;
+    case "ai-reset": photo = addState?.mode === "type" ? { image: null, est: null, answers: {}, desc: photo?.desc || "" } : null; renderAdd(); break;
     case "ai-add": {
       syncAiEdits();
       const meal = addState.meal;

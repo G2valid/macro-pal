@@ -435,3 +435,10 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; }
 .compare figure { margin: 0; }
 .compare img { width: 100%; aspect-ratio: 3/4; object-fit: cover; border-radius: 14px; display: block; }
 .compare figcaption { text-align: center; font-size: 13px; font-weight: 600; margin-top: 6px; }
+
+/* Quick log bar on Today */
+.quicklog { display: flex; gap: 8px; align-items: center; background: var(--surface); border-radius: 999px; padding: 6px 6px 6px 8px; box-shadow: var(--shadow); border: 1px solid var(--line); }
+.quicklog .input { border: 0; background: transparent; padding: 10px 8px; min-width: 0; flex: 1; }
+.quicklog .input:focus { outline: none; }
+.quicklog-go { width: 42px; height: 42px; border-radius: 50%; flex: none; background: linear-gradient(135deg, var(--g1), var(--g2)); color: #fff; font-size: 20px; font-weight: 700; }
+.sticky-add { position: sticky; bottom: 8px; z-index: 2; box-shadow: 0 8px 24px color-mix(in srgb, var(--g2) 40%, transparent); }
