@@ -1,5 +1,6 @@
 import { estimateFood, readFitnessScreens, suggestMeals, reviewEating, suggestExampleDay, readLabel, prepareImage, MODELS, DEFAULT_MODEL } from "./ai.js?v=9";
 import { buildExampleDay, mealBudgets, MEAL_PATTERNS } from "./mealplan.js?v=2";
+import { COACHES, DEFAULT_COACH, seasonalCoach, coachLine } from "./coaches.js?v=1";
 
 /* =========================================================
    Storage
@@ -365,7 +366,7 @@ function renderToday() {
       p.celebrated.protein = currentDay;
       save();
       confetti();
-      toast("Protein goal hit! 💪");
+      if (!coachSay("protein")) toast("Protein goal hit! 💪");
     }
   }
 }
@@ -616,6 +617,11 @@ function renderSettings() {
       <button data-act="edit-fitness-goals"><span>👟 Steps & exercise</span><span class="v">${(p.stepGoal || 8000).toLocaleString()} steps ›</span></button>
     </div>
 
+    <div class="section-label">Coach</div>
+    <div class="list">
+      <button data-act="coach-open"><span>${(COACHES[coachCfg().id] || COACHES[DEFAULT_COACH]).emoji} ${esc((COACHES[coachCfg().id] || COACHES[DEFAULT_COACH]).name)}</span><span class="v">${{ off: "Off", chill: "Chill", normal: "Normal", chatty: "Chatty" }[coachCfg().freq]} ›</span></button>
+    </div>
+
     <div class="section-label">Theme</div>
     <div class="card">
       <div class="swatches">${Object.entries(THEMES).map(([k, t]) => `<button class="swatch ${p.accent === k ? "on" : ""}" data-act="accent" data-v="${k}"><i style="background:linear-gradient(135deg, ${t.g[0]}, ${t.g[1]})"></i>${t.label}</button>`).join("")}</div>
@@ -793,8 +799,14 @@ function openWeightSheet() {
     e.preventDefault();
     const v = Number(e.target.w.value);
     if (!v) return;
-    logWeight(fromDispW(v), e.target.d.value || today());
+    const date = e.target.d.value || today();
+    const prevWeekly = weeklyWeights().filter((w) => w.date < date).pop();
+    logWeight(fromDispW(v), date);
     save(); closeSheet(); render(); toast("Weight logged");
+    if (prevWeekly && parseYmd(date).getDay() === (P().weighDay ?? 1)) {
+      const diff = fromDispW(v) - prevWeekly.kg;
+      if (Math.abs(diff) > 0.05) coachQueue(diff < 0 === P().goalWeightKg < P().startWeightKg ? "weighDown" : "weighUp");
+    }
   });
 }
 
@@ -900,10 +912,20 @@ function bindQuick() {
 
 function addEntry(en, { saveFood = true, ai = false } = {}) {
   const day = ensureDay();
+  const before = totals(day.entries).kcal;
+  const firstToday = currentDay === today() && !day.entries.length;
   const entry = { id: uid(), meal: addState?.meal || defaultMeal(), ...en, ai };
   day.entries.push(entry);
   if (saveFood) rememberFood(en);
   save();
+  if (currentDay === today()) {
+    const goal = dayGoal(today()).kcal;
+    const after = totals(day.entries).kcal;
+    const st = streakDays();
+    if (before <= goal && after > goal) coachQueue("over");
+    else if (firstToday && [3, 5, 7, 10, 14, 21, 30, 50, 75, 100].includes(st)) coachQueue("streak");
+    else coachQueue("food");
+  }
   return entry;
 }
 function rememberFood(en) {
@@ -1666,7 +1688,7 @@ function recordLabel(key, r) {
 const fitSnapshot = () => ({ rec: recordMap(), week: weekTotals(currentDay) });
 
 /** Celebrate new personal records and a newly reached weekly goal. */
-function celebrateFitness(before, date = currentDay) {
+function celebrateFitness(before, date = currentDay, addedWorkout = false) {
   const after = recordMap();
   const wins = [];
   for (const [k, r] of Object.entries(after)) {
@@ -1683,7 +1705,8 @@ function celebrateFitness(before, date = currentDay) {
   if (wins.length || hitGoal) {
     confetti();
     setTimeout(() => toast(wins.length ? `🏆 New PR! ${wins[0]}` : "🎯 Weekly activity goal reached!"), 300);
-  }
+    coachQueue(wins.length ? "pr" : "week");
+  } else if (addedWorkout) coachQueue("workout");
 }
 
 function miniRing(val, goal, label, sub) {
@@ -1835,7 +1858,7 @@ function openWorkout(id) {
     if (w) Object.assign(w, rec);
     else day.workouts.push({ id: uid(), source: "manual", ...rec });
     save(); closeSheet(); render(); toast(w ? "Saved" : "Workout logged 💪");
-    celebrateFitness(snap);
+    celebrateFitness(snap, currentDay, !w);
   });
 }
 
@@ -1954,7 +1977,7 @@ function saveShots() {
   save(); closeSheet();
   currentDay = date; tab = "fitness"; render();
   toast(added ? `Logged ${added} workout${added > 1 ? "s" : ""} 💪` : "Daily stats saved");
-  celebrateFitness(snap, date);
+  celebrateFitness(snap, date, added > 0);
 }
 
 $("#shotInput").addEventListener("change", async (e) => {
@@ -2200,6 +2223,107 @@ function openCycle() {
 }
 
 /* =========================================================
+   Coach pop-ups (pre-written lines from coaches.js)
+   ========================================================= */
+const COACH_FREQ = { off: 0, chill: 2, normal: 6, chatty: 20 };
+const BIG_EVENTS = ["protein", "pr", "week", "weighDown", "weighUp", "streak", "over"];
+const coachCfg = (p = P()) => ({ id: DEFAULT_COACH, freq: "normal", holidays: true, ...(p?.coach || {}) });
+
+function coachVars() {
+  const p = P();
+  const tg = dayGoal(today());
+  const tot = totals(dayData(today()).entries);
+  return { name: p.name, streak: streakDays(), protein_left: Math.max(0, r0(tg.protein - tot.p)), kcal_left: Math.max(0, r0(tg.kcal - tot.kcal)) };
+}
+
+/** Show a coach line for an event, respecting the chosen frequency. */
+function coachSay(event, { force = false } = {}) {
+  const p = P();
+  if (!p) return false;
+  const cfg = coachCfg();
+  const cap = COACH_FREQ[cfg.freq] ?? 6;
+  if (!cap && !force) return false;
+  const log = (p.coachLog ||= {});
+  if (log.date !== today()) Object.assign(log, { date: today(), count: 0, last: 0 });
+  const big = BIG_EVENTS.includes(event);
+  if (!force && !big && (log.count >= cap || Date.now() - log.last < 90e3)) return false;
+  let id = cfg.id;
+  const guest = cfg.holidays && !force && seasonalCoach();
+  if (guest && guest !== id && Math.random() < 0.35) id = guest;
+  const text = coachLine(id, event, coachVars());
+  if (!text) return false;
+  log.count++; log.last = Date.now();
+  save();
+  showCoach(id, text, guest === id && cfg.id !== id);
+  return true;
+}
+
+let coachTimer;
+function showCoach(id, text, isGuest) {
+  const c = COACHES[id];
+  const el = $("#coachPop");
+  el.innerHTML = `<span class="coach-av">${c.emoji}</span><div class="coach-txt"><b>${esc(c.name)}${isGuest ? ` <span class="coach-guest">Guest</span>` : ""}</b><span>${esc(text)}</span></div>`;
+  el.hidden = false;
+  el.classList.remove("coach-in"); void el.offsetWidth; el.classList.add("coach-in");
+  clearTimeout(coachTimer);
+  coachTimer = setTimeout(() => (el.hidden = true), 7000 + Math.min(5000, text.length * 40));
+}
+
+$("#coachPop").addEventListener("click", () => { $("#coachPop").hidden = true; });
+
+// Collect events fired in quick succession (e.g. adding 3 items) and say the most important one.
+let coachPending = null, coachPendingTimer;
+const PRIORITY = { pr: 9, week: 8, protein: 7, streak: 6, over: 5, weighDown: 5, weighUp: 5, workout: 4, water: 3, food: 1 };
+function coachQueue(event) {
+  if (!coachPending || (PRIORITY[event] || 0) > (PRIORITY[coachPending] || 0)) coachPending = event;
+  clearTimeout(coachPendingTimer);
+  coachPendingTimer = setTimeout(() => { const e = coachPending; coachPending = null; coachSay(e); }, 700);
+}
+
+/** Greeting / nudge / tip when the app is opened. */
+function coachOnOpen() {
+  const p = P();
+  if (!p || coachCfg().freq === "off") return;
+  const h = new Date().getHours();
+  const part = h < 12 ? "morning" : h < 17 ? "afternoon" : "evening";
+  const seen = (p.coachSeen ||= {});
+  const key = `${today()}-${part}`;
+  const day = dayData(today());
+  let event = null;
+  if (!seen[key]) {
+    seen[key] = 1;
+    event = part;
+    if (part === "afternoon" && !day.entries.length) event = "missed";
+    if (part === "evening" && day.entries.length) {
+      const tg = dayGoal(today()); const tot = totals(day.entries);
+      if (tot.kcal >= tg.kcal * 0.85 && tot.kcal <= tg.kcal * 1.05) event = "onTrack";
+    }
+    for (const k of Object.keys(seen)) if (!k.startsWith(today())) delete seen[k];
+    save();
+  } else if (Math.random() < 0.3) event = "tip";
+  if (event) setTimeout(() => coachSay(event), 1200);
+}
+
+function openCoachPicker() {
+  const p = P();
+  const cfg = coachCfg();
+  const season = seasonalCoach();
+  const card = ([id, c]) => `<button class="coach-card ${cfg.id === id ? "on" : ""}" data-act="coach-pick" data-v="${id}">
+      <span class="coach-emo">${c.emoji}</span><b>${esc(c.name)}</b><span>${esc(c.vibe)}</span>${season === id ? `<em>In season!</em>` : ""}</button>`;
+  const all = Object.entries(COACHES);
+  openSheet(`${sheetTitle("Your coach")}
+    <p class="small muted" style="margin-top:0">Your coach pops up with motivation and tips when you open the app and when you log things.</p>
+    <div class="coach-grid">${all.filter(([, c]) => !c.season).map(card).join("")}</div>
+    <h3 style="margin:16px 2px 8px">Holiday guests</h3>
+    <div class="coach-grid">${all.filter(([, c]) => c.season).map(card).join("")}</div>
+    <label class="field" style="display:flex;gap:8px;align-items:center;margin-top:12px"><input type="checkbox" id="coachHol" ${cfg.holidays ? "checked" : ""} style="width:auto"> <span style="font-weight:500">Holiday guests drop in during their season</span></label>
+    <div style="font-weight:600;margin:6px 2px 8px">How chatty?</div>
+    <div class="seg">${[["off", "Off"], ["chill", "Chill"], ["normal", "Normal"], ["chatty", "Chatty"]].map(([k, l]) => `<button class="${cfg.freq === k ? "on" : ""}" data-act="coach-freq" data-v="${k}">${l}</button>`).join("")}</div>
+    <button class="btn secondary" data-act="coach-preview">🔊 Hear from my coach</button>`, () => render());
+  $("#coachHol").addEventListener("change", (e) => { p.coach = { ...coachCfg(), holidays: e.target.checked }; save(); });
+}
+
+/* =========================================================
    Global actions
    ========================================================= */
 document.addEventListener("click", (ev) => {
@@ -2238,6 +2362,17 @@ document.addEventListener("click", (ev) => {
     case "coach-preset": coach.preset = v; renderCoach(); break;
     case "coach-save": saveCoach(); break;
     case "coach-ideas": openIdeas(); break;
+    case "coach-open": openCoachPicker(); break;
+    case "coach-pick":
+      p.coach = { ...coachCfg(), id: v }; save();
+      document.querySelectorAll(".coach-card").forEach((b) => b.classList.toggle("on", b === t));
+      coachSay("morning", { force: true });
+      break;
+    case "coach-freq":
+      p.coach = { ...coachCfg(), freq: v }; save();
+      document.querySelectorAll("[data-act=coach-freq]").forEach((b) => b.classList.toggle("on", b === t));
+      break;
+    case "coach-preview": coachSay(["tip", "food", "protein", "workout", "streak"][Math.floor(Math.random() * 5)], { force: true }); break;
     case "example-day": openExampleDay(); break;
     case "meal-pattern": p.mealPattern = v; save(); exDay.claude = null; renderExampleDay(); break;
     case "ex-shuffle": exDay.claude = null; exDay.seed++; renderExampleDay(); break;
@@ -2341,8 +2476,10 @@ document.addEventListener("click", (ev) => {
     }
     case "water": {
       const day = ensureDay();
-      day.water = Math.max(0, (day.water || 0) + Number(t.dataset.n));
+      const was = day.water || 0;
+      day.water = Math.max(0, was + Number(t.dataset.n));
       save(); render();
+      if (was < (p.waterGoal || 8) && day.water >= (p.waterGoal || 8)) coachQueue("water");
       break;
     }
     case "copy-yesterday": {
@@ -2397,12 +2534,14 @@ function boot() {
     return;
   }
   render();
+  coachOnOpen();
 }
 boot();
 
 // Refresh "today" if the app is left open past midnight.
 let lastToday = today();
 document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && P()) coachOnOpen();
   if (document.visibilityState === "visible" && today() !== lastToday) {
     if (currentDay === lastToday) currentDay = today();
     lastToday = today();
