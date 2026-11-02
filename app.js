@@ -1,7 +1,7 @@
 import { estimateFood, readFitnessScreens, suggestMeals, reviewEating, suggestExampleDay, readLabel, generatePlan, prepareImage, MODELS, DEFAULT_MODEL } from "./ai.js?v=10";
 import { buildPlanPrompt, parsePlanReply, normalizePlan, groceryList, groceryText, fmtQty } from "./planner.js?v=1";
 import { buildExampleDay, mealBudgets, MEAL_PATTERNS } from "./mealplan.js?v=2";
-import { COACHES, DEFAULT_COACH, seasonalCoach, coachLine } from "./coaches.js?v=5";
+import { COACHES, DEFAULT_COACH, seasonalCoach, coachLine } from "./coaches.js?v=6";
 import { TRIGGER_META, LINE_ID, FALLBACK, T } from "./triggers.js?v=2";
 
 /* =========================================================

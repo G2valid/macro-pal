@@ -17,6 +17,7 @@
 import { WHISKERS } from "./coaches/whiskers.js?v=1";
 import { BESTIE } from "./coaches/bestie.js?v=1";
 import { DJ } from "./coaches/dj.js?v=1";
+import { DRILL } from "./coaches/drill.js?v=1";
 
 export const COACHES = {
   bestie: {
@@ -28,27 +29,9 @@ export const COACHES = {
     lines: DJ,
   },
   drill: {
-    name: "Drill Sergeant", emoji: "🪖", vibe: "Loud, no excuses (but secretly proud)",
-    lines: {
-      morning: ["ON YOUR FEET, {name}! BREAKFAST IS NOT OPTIONAL!", "REVEILLE! TODAY WE EXECUTE THE PLAN!"],
-      afternoon: ["STATUS REPORT, {name}! ARE THOSE MACROS SQUARED AWAY?", "HALFWAY THROUGH THE DAY. NO SLACKING!"],
-      evening: ["EVENING INSPECTION! FINISH STRONG!", "LIGHTS OUT SOON. GET YOUR REST, THAT'S AN ORDER!"],
-      food: ["LOGGED. GOOD. CARRY ON.", "FOOD ACCOUNTED FOR. OUTSTANDING.", "THAT'S HOW WE DO IT IN THIS UNIT!"],
-      protein: ["PROTEIN TARGET ACQUIRED! OUTSTANDING WORK, RECRUIT!", "MISSION: PROTEIN. STATUS: COMPLETE. HOOAH!"],
-      over: ["OVER THE LINE TODAY. NO PANIC, RECRUIT. TOMORROW WE RECOVER.", "SETBACK NOTED. WE DON'T QUIT. WE ADJUST."],
-      onTrack: ["INSIDE YOUR CALORIES! THAT'S DISCIPLINE!", "TARGET HELD ALL DAY. I'M... PROUD. DON'T TELL ANYONE."],
-      missed: ["NOTHING LOGGED?! I WANT A REPORT ON MY DESK, {name}!", "WHERE IS YOUR FOOD LOG, SOLDIER?!"],
-      workout: ["WORKOUT LOGGED! THAT'S WHAT I'M TALKING ABOUT!", "YOU SWEAT, YOU WIN. CARRY ON!"],
-      pr: ["NEW PERSONAL RECORD! MEDAL OF HONOR FOR YOU, RECRUIT! 🎖️", "PR! I MAY HAVE SOMETHING IN MY EYE."],
-      week: ["WEEKLY GOAL COMPLETE! PROMOTION EARNED!", "SEVEN DAYS OF DISCIPLINE! OUTSTANDING!"],
-      weighDown: ["SCALE IS DOWN! THE PLAN IS WORKING!", "PROGRESS CONFIRMED. STAY THE COURSE!"],
-      weighUp: ["SCALE WENT UP. WATER WEIGHT. WE DO NOT PANIC. WE PROCEED.", "ONE WEIGH-IN IS NOT THE WAR. KEEP MARCHING."],
-      streak: ["{streak} DAYS STRAIGHT! THAT'S CONSISTENCY, RECRUIT!", "{streak}-DAY STREAK. DO NOT BREAK FORMATION!"],
-      water: ["HYDRATION COMPLETE! DISMISSED!", "WATER GOAL MET. GOOD SOLDIER."],
-      tip: ["PLAN TOMORROW'S MEALS TONIGHT. FAILING TO PLAN IS PLANNING TO FAIL!", "PROTEIN AT EVERY MEAL. NO EXCEPTIONS!", "SLEEP IS PART OF THE MISSION. SEVEN HOURS MINIMUM!"],
-    },
+    name: "Drill Sergeant", emoji: "🪖", vibe: "Treats your breakfast like a military operation",
+    lines: DRILL,
   },
-
   surfer: {
     name: "Surfer Dude", emoji: "🏄", vibe: "Totally rad gains, bro",
     lines: {
