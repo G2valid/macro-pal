@@ -462,3 +462,20 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; }
 .coach-card b { font-size: 14px; }
 .coach-card span:not(.coach-emo) { font-size: 12px; color: var(--ink-3); }
 .coach-card em { font-style: normal; font-size: 11px; font-weight: 800; color: var(--accent); }
+
+/* Meal plan */
+.plan-day-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; padding: 14px 16px; text-align: left; }
+.plan-day.is-today { box-shadow: 0 0 0 2px var(--accent), var(--shadow); }
+.plan-meal { display: flex; gap: 10px; align-items: center; width: 100%; text-align: left; padding: 10px 16px; border-top: 1px solid var(--line); }
+.plan-meal .grow, .plan-today .grow { flex: 1; min-width: 0; }
+.plan-meal .nm, .plan-today .nm { font-weight: 600; }
+.plan-meal .sub, .plan-today .sub { font-size: 12px; color: var(--ink-3); }
+.plan-today { display: flex; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+.plan-today:first-of-type { border-top: 0; }
+.plan-log { width: 40px; height: 40px; border-radius: 50%; flex: none; background: linear-gradient(135deg, var(--g1), var(--g2)); color: #fff; font-size: 22px; font-weight: 700; }
+.plan-log.done { background: var(--surface-2); color: var(--accent); }
+.grocery { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); font-size: 15px; }
+.grocery:first-of-type { border-top: 0; }
+.grocery input { width: 22px; height: 22px; accent-color: var(--accent); flex: none; }
+.grocery .grow { flex: 1; }
+.grocery.got .grow { text-decoration: line-through; color: var(--ink-3); }

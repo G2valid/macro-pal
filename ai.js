@@ -148,13 +148,13 @@ export async function estimateFood({ apiKey, model, image, description, answers 
 }
 
 /** Send one request and return the parsed JSON matching `schema`. */
-async function askClaude({ apiKey, model, system, schema, content, what }) {
+async function askClaude({ apiKey, model, system, schema, content, what, maxTokens = 16000, effort = "medium" }) {
   const client = await getClient(apiKey);
   const params = {
     model,
-    max_tokens: 16000,
+    max_tokens: maxTokens,
     thinking: { type: "adaptive" },
-    output_config: { effort: "medium", format: { type: "json_schema", schema } },
+    output_config: { effort, format: { type: "json_schema", schema } },
     system,
     messages: [{ role: "user", content }],
   };
@@ -306,6 +306,56 @@ export async function readLabel({ apiKey, model, image }) {
     kcal: Math.round(d.calories), p: round1(d.protein_g), c: round1(d.carbs_g), f: round1(d.fat_g),
     fiber: round1(d.fiber_g), sugar: round1(d.sugar_g), allergens: d.allergens || "",
   };
+}
+
+/* ---------- Weekly meal plan ---------- */
+
+const PLAN_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["meals", "tips"],
+  properties: {
+    meals: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["day", "slot", "title", "recipe", "ingredients", "portions"],
+        properties: {
+          day: { type: "integer" },
+          slot: { type: "string" },
+          title: { type: "string" },
+          recipe: { type: "string" },
+          ingredients: {
+            type: "array",
+            items: {
+              type: "object", additionalProperties: false, required: ["name", "qty", "unit", "aisle"],
+              properties: { name: { type: "string" }, qty: { type: "number" }, unit: { type: "string" }, aisle: { type: "string" } },
+            },
+          },
+          portions: {
+            type: "array",
+            items: {
+              type: "object", additionalProperties: false, required: ["person", "serving", "calories", "protein_g", "carbs_g", "fat_g"],
+              properties: {
+                person: { type: "string" }, serving: { type: "string" }, calories: { type: "number" },
+                protein_g: { type: "number" }, carbs_g: { type: "number" }, fat_g: { type: "number" },
+              },
+            },
+          },
+        },
+      },
+    },
+    tips: { type: "array", items: { type: "string" } },
+  },
+};
+
+/** Generate the week through the API (the copy-into-the-Claude-app flow uses the same prompt). */
+export async function generatePlan({ apiKey, model, prompt }) {
+  return askClaude({
+    apiKey, model, system: COACH_SYSTEM, schema: PLAN_SCHEMA, content: [{ type: "text", text: prompt }],
+    what: "meal plan", maxTokens: 20000, effort: "low",
+  });
 }
 
 /* ---------- Food coach ---------- */

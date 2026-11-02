@@ -1,4 +1,5 @@
-import { estimateFood, readFitnessScreens, suggestMeals, reviewEating, suggestExampleDay, readLabel, prepareImage, MODELS, DEFAULT_MODEL } from "./ai.js?v=9";
+import { estimateFood, readFitnessScreens, suggestMeals, reviewEating, suggestExampleDay, readLabel, generatePlan, prepareImage, MODELS, DEFAULT_MODEL } from "./ai.js?v=10";
+import { buildPlanPrompt, parsePlanReply, normalizePlan, groceryList, groceryText, fmtQty } from "./planner.js?v=1";
 import { buildExampleDay, mealBudgets, MEAL_PATTERNS } from "./mealplan.js?v=2";
 import { COACHES, DEFAULT_COACH, seasonalCoach, coachLine } from "./coaches.js?v=1";
 
@@ -333,9 +334,11 @@ function renderToday() {
       ${macro("🍞", "Carbs", tot.c, tg.carbs, "carbs")}
       ${macro("🥑", "Fat", tot.f, tg.fat, "fat")}
     </div>
+    ${todaysPlanCard()}
     <div class="card">
       <div class="card-head"><h2>🧑‍🍳 Food coach</h2><span class="meta">by Claude</span></div>
-      <button class="btn" data-act="example-day" style="margin-bottom:8px">🗓️ Example day: map out ${dayGoal(today()).kcal} kcal</button>
+      <button class="btn" data-act="plan-open" style="margin-bottom:8px">🛒 ${state.plan ? "Weekly meal plan & groceries" : "Plan our week + grocery list"}</button>
+      <button class="btn secondary" data-act="example-day" style="margin-bottom:8px">🗓️ Example day: map out ${dayGoal(today()).kcal} kcal</button>
       <div class="btn-row">
         <button class="btn secondary" data-act="coach-ideas">💡 What should I eat?</button>
         <button class="btn secondary" data-act="coach-review">📋 How am I eating?</button>
@@ -1642,6 +1645,310 @@ async function runExampleClaude() {
 }
 
 /* =========================================================
+   Weekly household meal plan
+   ========================================================= */
+let planUI = null; // { view: "setup" | "plan" | "groceries", busy, error, addGuest }
+
+function household() {
+  const h = (state.household ||= { include: null, guests: [], pattern: "3+1", notes: "", week: "next" });
+  if (!h.include) h.include = Object.keys(state.profiles);
+  return h;
+}
+
+function planPeople() {
+  const h = household();
+  const local = Object.values(state.profiles).filter((p) => h.include.includes(p.id)).map((p) => {
+    const tg = computeTargets(p);
+    return { id: p.id, name: p.name, kcal: tg.kcal, protein: tg.protein, carbs: tg.carbs, fat: tg.fat, diet: p.diet || [], prefs: p.foodPrefs || "" };
+  });
+  return [...local, ...h.guests];
+}
+
+function planStart(which = household().week) {
+  const ws = weekStart(today());
+  return which === "this" ? ws : addDays(ws, 7);
+}
+
+function myPlanId(plan = state.plan) {
+  if (!plan) return null;
+  const me = P();
+  return (plan.people.find((x) => x.id === me.id) || plan.people.find((x) => x.name.toLowerCase() === me.name.toLowerCase()))?.id || null;
+}
+
+function slotToMeal(slot) {
+  const s = slot.toLowerCase();
+  if (s.includes("breakfast")) return "Breakfast";
+  if (s.includes("lunch") || s === "meal 1") return "Lunch";
+  if (s.includes("dinner") || s === "meal 2") return "Dinner";
+  return "Snacks";
+}
+
+function openPlanner(view) {
+  planUI = { view: view || (state.plan ? "plan" : "setup"), busy: false, error: null, addGuest: false, open: today() };
+  renderPlanner();
+}
+
+function renderPlanner() {
+  const v = planUI.view;
+  const body = v === "setup" ? plannerSetup() : v === "groceries" ? plannerGroceries() : plannerPlan();
+  const tabs = state.plan && v !== "setup"
+    ? `<div class="seg">${[["plan", "🗓️ Plan"], ["groceries", "🛒 Groceries"]].map(([k, l]) => `<button class="${v === k ? "on" : ""}" data-act="plan-view" data-v="${k}">${l}</button>`).join("")}</div>` : "";
+  const html = `${sheetTitle(v === "setup" ? "Plan a week" : "Meal plan")}${tabs}${body}`;
+  if ($("#sheet").hidden) openSheet(html, () => { planUI = null; render(); });
+  else {
+    const st = planUI.lastView === v ? $("#sheetBody").scrollTop : 0;
+    $("#sheetBody").innerHTML = html; $("#sheetBody").scrollTop = st;
+  }
+  planUI.lastView = v;
+  bindPlanner();
+}
+
+function plannerSetup() {
+  const h = household();
+  const people = planPeople();
+  const slots = MEAL_PATTERNS[h.pattern]?.slots || MEAL_PATTERNS["3+1"].slots;
+  const fmt = (d) => parseYmd(d).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return `
+    <p class="small muted" style="margin-top:0">One plan for the household: shared meals, each person's own portions, and one combined grocery list.</p>
+    <div style="font-weight:600;margin:4px 2px 8px">Which week?</div>
+    <div class="seg">${["this", "next"].map((w) => `<button class="${h.week === w ? "on" : ""}" data-act="plan-week" data-v="${w}">${w === "this" ? "This week" : "Next week"} (${fmt(planStart(w))})</button>`).join("")}</div>
+    <div style="font-weight:600;margin:4px 2px 8px">Who's eating?</div>
+    <div class="chips" style="margin-bottom:8px">
+      ${Object.values(state.profiles).map((p) => `<button class="chip ${h.include.includes(p.id) ? "on" : ""}" data-act="plan-person" data-v="${p.id}">${esc(p.name)}</button>`).join("")}
+      ${h.guests.map((g) => `<button class="chip on" data-act="plan-guest-rm" data-v="${g.id}">${esc(g.name)} ✕</button>`).join("")}
+      <button class="chip" data-act="plan-guest">+ Someone on another phone</button>
+    </div>
+    ${planUI.addGuest ? `<div class="card" style="margin-bottom:12px">
+      <p class="small muted" style="margin-top:0">Their numbers are in their app under Settings → Daily targets.</p>
+      <form id="guestForm">
+        <label class="field"><span>Name</span><input name="name" required maxlength="24"></label>
+        <div class="row4">${[["kcal", "kcal"], ["protein", "Protein g"], ["carbs", "Carbs g"], ["fat", "Fat g"]].map(([k, l]) => `<label class="field"><span>${l}</span><input name="${k}" type="number" inputmode="numeric" required></label>`).join("")}</div>
+        <div class="chips" style="margin-bottom:10px">${DIETS.map((d) => `<label class="chip"><input type="checkbox" name="diet" value="${d}" style="width:auto;margin-right:4px">${d}</label>`).join("")}</div>
+        <button class="btn">Add</button>
+      </form></div>` : ""}
+    ${people.map((x) => `<div class="small muted" style="margin:0 2px 4px">${esc(x.name)}: ${x.kcal} kcal · P ${x.protein} · C ${x.carbs} · F ${x.fat}${x.diet?.length ? ` · ${esc(x.diet.join(", "))}` : ""}</div>`).join("")}
+    <div style="font-weight:600;margin:12px 2px 8px">Meals per day</div>
+    <div class="chips" style="margin-bottom:12px">${Object.entries(MEAL_PATTERNS).map(([k, v]) => `<button class="chip ${h.pattern === k ? "on" : ""}" data-act="plan-pattern" data-v="${k}">${v.label}</button>`).join("")}</div>
+    <label class="field"><span>Anything else? (optional)</span><input id="planNotes" class="input" value="${esc(h.notes)}" placeholder="e.g. taco Tuesday, budget-friendly, no fish, quick lunches"></label>
+
+    <div class="card" style="margin:14px 0 10px">
+      <h3 style="margin-bottom:6px">Free with your Claude app</h3>
+      <ol class="small" style="margin:0 0 10px;padding-left:18px;display:grid;gap:4px">
+        <li>Tap <b>Copy request</b>.</li>
+        <li>Open the <b>Claude app</b>, start a new chat, paste and send.</li>
+        <li>When it's done, tap the copy button under Claude's reply.</li>
+        <li>Come back here, paste it below and tap <b>Build my week</b>.</li>
+      </ol>
+      <button class="btn" data-act="plan-copy" ${people.length ? "" : "disabled"}>📋 Copy request for Claude</button>
+      <textarea id="planPaste" rows="4" class="input" style="margin-top:10px" placeholder="Paste Claude's reply here"></textarea>
+      <button class="btn secondary" style="margin-top:8px" data-act="plan-build">Build my week</button>
+    </div>
+    ${state.apiKey ? `<button class="btn secondary" data-act="plan-api" ${people.length ? "" : "disabled"}>${planUI.busy ? "Planning… (about a minute)" : "✨ Or generate with your API key (~10–20¢)"}</button>` : ""}
+    ${planUI.error ? `<div class="note warn" style="margin-top:10px">${esc(planUI.error)}</div>` : ""}
+    <button class="btn secondary" data-act="plan-import" style="margin-top:8px">📥 Import a plan from your partner</button>
+    ${state.plan ? `<button class="btn secondary" data-act="plan-view" data-v="plan" style="margin-top:8px">← Back to current plan</button>` : ""}
+    ${slots.length ? "" : ""}`;
+}
+
+function plannerPlan() {
+  const plan = state.plan;
+  const me = myPlanId();
+  const fmt = (d) => parseYmd(d).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+  const myTg = me ? plan.people.find((x) => x.id === me) : null;
+  return `
+    <p class="small muted" style="margin:0 2px 10px">${plan.people.map((x) => esc(x.name)).join(" & ")} · week of ${parseYmd(plan.startYmd).toLocaleDateString(undefined, { month: "short", day: "numeric" })}${me ? ` · showing ${esc(P().name)}'s portions` : ""}</p>
+    ${plan.days.map((d) => {
+      const mine = d.meals.map((m) => m.portions[me]).filter(Boolean);
+      const tot = mine.reduce((t, x) => t + x.kcal, 0);
+      const open = planUI.open === d.date;
+      return `<div class="card plan-day ${d.date === today() ? "is-today" : ""}" style="margin-bottom:10px;padding:0">
+        <button class="plan-day-head" data-act="plan-day" data-v="${d.date}"><b>${fmt(d.date)}${d.date === today() ? " · Today" : ""}</b><span class="muted small num">${me && tot ? `${tot}${myTg ? ` / ${myTg.kcal}` : ""} kcal` : ""} ${open ? "▴" : "▾"}</span></button>
+        ${open ? d.meals.map((m) => {
+          const por = m.portions[me];
+          const done = plan.logged?.[`${d.date}|${m.id}|${me}`];
+          return `<button class="plan-meal" data-act="plan-meal" data-v="${d.date}|${m.id}">
+            <span class="emo">${SLOT_EMO(m.slot)}</span>
+            <div class="grow"><div class="small muted">${esc(m.slot)}</div><div class="nm">${esc(m.title)}</div>${por ? `<div class="sub num">${esc(por.serving)}</div>` : ""}</div>
+            <span class="num small" style="white-space:nowrap">${done ? "✅" : por ? `${por.kcal} kcal` : ""}</span></button>`;
+        }).join("") : ""}
+      </div>`;
+    }).join("")}
+    ${plan.tips?.length ? `<div class="card" style="padding:12px 16px;margin-bottom:12px"><b>💡 Prep tips</b><ul style="margin:6px 0 0;padding-left:18px;display:grid;gap:4px;font-size:14px">${plan.tips.map((t) => `<li>${esc(t)}</li>`).join("")}</ul></div>` : ""}
+    <div class="btn-row">
+      <button class="btn secondary" data-act="plan-send">📤 Send to partner</button>
+      <button class="btn secondary" data-act="plan-view" data-v="setup">🔄 New plan</button>
+    </div>`;
+}
+
+function plannerGroceries() {
+  const plan = state.plan;
+  const list = groceryList(plan);
+  const total = list.reduce((t, a) => t + a.items.length, 0);
+  const got = list.reduce((t, a) => t + a.items.filter((i) => plan.checked[i.key]).length, 0);
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin:0 2px 10px"><span class="small muted">${got} of ${total} in the cart</span>
+      <button class="pill-btn" data-act="plan-uncheck">Reset</button></div>
+    ${list.map(({ aisle, items }) => `<div class="card" style="padding:6px 14px 10px;margin-bottom:10px">
+      <h3 style="margin:8px 0 4px;font-size:15px">${esc(aisle)}</h3>
+      ${items.map((i) => `<label class="grocery ${plan.checked[i.key] ? "got" : ""}"><input type="checkbox" data-gkey="${esc(i.key)}" ${plan.checked[i.key] ? "checked" : ""}>
+        <span class="grow">${esc(i.name)}</span><span class="num muted small">${esc([fmtQty(i.qty), i.unit].filter(Boolean).join(" "))}</span></label>`).join("")}
+    </div>`).join("") || `<div class="empty">No ingredients in this plan.</div>`}
+    <button class="btn" data-act="plan-share-list">📤 Share list (Notes, Messages…)</button>`;
+}
+
+function bindPlanner() {
+  $("#planNotes")?.addEventListener("input", (e) => { household().notes = e.target.value; save(); });
+  $("#guestForm")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    household().guests.push({
+      id: "g" + uid(), name: f.get("name").trim(), kcal: Number(f.get("kcal")), protein: Number(f.get("protein")),
+      carbs: Number(f.get("carbs")), fat: Number(f.get("fat")), diet: f.getAll("diet"), prefs: "",
+    });
+    planUI.addGuest = false; save(); renderPlanner();
+  });
+  document.querySelectorAll("[data-gkey]").forEach((cb) => cb.addEventListener("change", () => {
+    state.plan.checked[cb.dataset.gkey] = cb.checked || undefined;
+    cb.closest(".grocery").classList.toggle("got", cb.checked);
+    save();
+  }));
+}
+
+function currentPlanPrompt() {
+  const h = household();
+  const slots = MEAL_PATTERNS[h.pattern].slots.map(([name, kind, share]) => ({ name, kind, share }));
+  return { slots, startYmd: planStart(), people: planPeople(), notes: h.notes };
+}
+
+async function copyPlanRequest() {
+  const { slots, startYmd, people, notes } = currentPlanPrompt();
+  const text = buildPlanPrompt({ startYmd, people, slots, notes });
+  try { await navigator.clipboard.writeText(text); toast("Copied! Paste it into the Claude app 📋"); }
+  catch {
+    openSheet(`${sheetTitle("Copy this into Claude")}<textarea class="input" rows="14" readonly id="promptBox">${esc(text)}</textarea><p class="hint">Select all and copy, then paste into the Claude app.</p><button class="btn" data-act="plan-reopen">Done</button>`);
+    $("#promptBox").select();
+  }
+}
+
+function acceptPlan(data) {
+  const { slots, startYmd, people } = currentPlanPrompt();
+  state.plan = normalizePlan(data, { startYmd, people, slots });
+  state.plan.logged = {};
+  save();
+  planUI.view = "plan"; planUI.error = null;
+  planUI.open = state.plan.days.some((d) => d.date === today()) ? today() : state.plan.days[0].date;
+  renderPlanner();
+  confetti(); toast("Your week is planned! 🗓️");
+}
+
+async function planViaApi() {
+  if (planUI.busy) return;
+  const { slots, startYmd, people, notes } = currentPlanPrompt();
+  planUI.busy = true; planUI.error = null; renderPlanner();
+  try {
+    const data = await generatePlan({ apiKey: state.apiKey, model: state.model || DEFAULT_MODEL, prompt: buildPlanPrompt({ startYmd, people, slots, notes }) });
+    if (!planUI) return;
+    planUI.busy = false;
+    acceptPlan(data);
+  } catch (err) {
+    if (!planUI) return;
+    planUI.busy = false; planUI.error = err.message; renderPlanner();
+  }
+}
+
+function openPlanMeal(key) {
+  const [date, id] = key.split("|");
+  const plan = state.plan;
+  const day = plan.days.find((d) => d.date === date);
+  const m = day?.meals.find((x) => x.id === id);
+  if (!m) return;
+  const me = myPlanId();
+  const done = plan.logged?.[`${date}|${id}|${me}`];
+  openSheet(`${sheetTitle(esc(m.title))}
+    <div class="small muted" style="margin:-6px 2px 10px">${SLOT_EMO(m.slot)} ${esc(m.slot)} · ${parseYmd(date).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}</div>
+    ${m.recipe ? `<div class="note">${esc(m.recipe)}</div>` : ""}
+    <h3 style="margin:10px 2px 6px">Portions</h3>
+    ${plan.people.map((x) => { const por = m.portions[x.id]; return por ? `<div class="ai-item"><div style="display:flex;justify-content:space-between"><b>${esc(x.name)}</b><b class="num">${por.kcal} kcal</b></div>
+      <div class="small">${esc(por.serving)}</div><div class="small muted num">P ${por.p} · C ${por.c} · F ${por.f}</div></div>` : ""; }).join("")}
+    ${m.ingredients.length ? `<h3 style="margin:10px 2px 6px">Ingredients (for everyone)</h3><div class="card" style="padding:10px 16px">${m.ingredients.map((g) => `<div style="display:flex;justify-content:space-between;gap:10px;font-size:14px;padding:3px 0"><span>${esc(g.name)}</span><span class="muted num">${esc([fmtQty(g.qty), g.unit].filter(Boolean).join(" "))}</span></div>`).join("")}</div>` : ""}
+    <br>
+    ${me && m.portions[me] ? `<button class="btn" data-act="plan-log" data-v="${key}" ${done ? "disabled" : ""}>${done ? "✅ Logged" : `+ Log my portion to ${slotToMeal(m.slot)}`}</button>` : ""}
+    <button class="btn secondary" data-act="plan-reopen">← Back to plan</button>
+    <button class="btn danger" data-act="plan-rm-meal" data-v="${key}">Remove from plan</button>`);
+}
+
+function logPlanMeal(key) {
+  const [date, id] = key.split("|");
+  const plan = state.plan;
+  const m = plan.days.find((d) => d.date === date)?.meals.find((x) => x.id === id);
+  const me = myPlanId();
+  const por = m?.portions[me];
+  if (!por) return;
+  const prevDay = currentDay;
+  currentDay = date;
+  addState = { meal: slotToMeal(m.slot) };
+  addEntry({ name: m.title.replace(/^🔥\s*/, ""), portion: por.serving, kcal: por.kcal, p: por.p, c: por.c, f: por.f, servings: 1 }, { saveFood: false });
+  addState = null;
+  if (date !== today()) currentDay = prevDay;
+  (plan.logged ||= {})[`${date}|${id}|${me}`] = 1;
+  save();
+  toast(`Logged ${m.title} ✅`);
+}
+
+async function sendPlan() {
+  const data = JSON.stringify({ kind: "biteclub-plan", version: 1, plan: { ...state.plan, logged: {}, checked: {} } });
+  const file = new File([data], `biteclub-plan-${state.plan.startYmd}.json`, { type: "application/json" });
+  try {
+    if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: "Our meal plan" }); return; }
+  } catch (err) { if (err.name === "AbortError") return; }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(file); a.download = file.name;
+  document.body.appendChild(a); a.click(); a.remove();
+  toast("Plan saved as a file. Send it to your partner.");
+}
+
+async function shareGroceries() {
+  const text = groceryText(state.plan);
+  try {
+    if (navigator.share) { await navigator.share({ title: "Grocery list", text }); return; }
+  } catch (err) { if (err.name === "AbortError") return; }
+  try { await navigator.clipboard.writeText(text); toast("List copied 📋"); } catch { toast("Couldn't share the list."); }
+}
+
+$("#planInput").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    if (data.kind !== "biteclub-plan" || !data.plan?.days) throw new Error();
+    state.plan = { ...data.plan, logged: {}, checked: {} };
+    save();
+    if (!myPlanId()) toast(`No one named ${P().name} is in this plan. Portions shown for the first person.`);
+    else toast("Plan imported 🗓️");
+    if (planUI) { planUI.view = "plan"; renderPlanner(); } else openPlanner("plan");
+  } catch { toast("That file isn't a Bite Club meal plan."); }
+});
+
+function todaysPlanCard() {
+  const plan = state.plan;
+  const me = myPlanId();
+  const day = plan?.days.find((d) => d.date === currentDay);
+  if (!day || !me) return "";
+  const meals = day.meals.filter((m) => m.portions[me]);
+  if (!meals.length) return "";
+  return `<div class="card">
+    <div class="card-head"><h2>🗓️ On the plan</h2><button class="meta" data-act="plan-open" style="color:var(--accent);font-weight:600">Full week ›</button></div>
+    ${meals.map((m) => {
+      const key = `${day.date}|${m.id}`;
+      const done = plan.logged?.[`${key}|${me}`];
+      return `<div class="plan-today"><button class="grow" data-act="plan-meal" data-v="${key}" style="text-align:left"><div class="small muted">${SLOT_EMO(m.slot)} ${esc(m.slot)}</div><div class="nm">${esc(m.title)}</div><div class="sub">${esc(m.portions[me].serving)} · ${m.portions[me].kcal} kcal</div></button>
+        <button class="plan-log ${done ? "done" : ""}" data-act="plan-log" data-v="${key}" ${done ? "disabled" : ""} aria-label="Log ${esc(m.title)}">${done ? "✓" : "+"}</button></div>`;
+    }).join("")}
+  </div>`;
+}
+
+/* =========================================================
    Fitness
    ========================================================= */
 /* ---------- Personal records & weekly goal ---------- */
@@ -2363,6 +2670,43 @@ document.addEventListener("click", (ev) => {
     case "coach-save": saveCoach(); break;
     case "coach-ideas": openIdeas(); break;
     case "coach-open": openCoachPicker(); break;
+    case "plan-open": closeSheet(); openPlanner(); break;
+    case "plan-reopen": closeSheet(); openPlanner(state.plan ? "plan" : "setup"); break;
+    case "plan-view": planUI.view = v; renderPlanner(); break;
+    case "plan-week": household().week = v; save(); renderPlanner(); break;
+    case "plan-pattern": household().pattern = v; save(); renderPlanner(); break;
+    case "plan-person": {
+      const h = household();
+      h.include = h.include.includes(v) ? h.include.filter((x) => x !== v) : [...h.include, v];
+      save(); renderPlanner();
+      break;
+    }
+    case "plan-guest": planUI.addGuest = !planUI.addGuest; renderPlanner(); break;
+    case "plan-guest-rm": household().guests = household().guests.filter((g) => g.id !== v); save(); renderPlanner(); break;
+    case "plan-copy": copyPlanRequest(); break;
+    case "plan-build":
+      try { acceptPlan(parsePlanReply($("#planPaste").value)); }
+      catch (err) { planUI.error = err.message; renderPlanner(); }
+      break;
+    case "plan-api": planViaApi(); break;
+    case "plan-import": $("#planInput").click(); break;
+    case "plan-day": planUI.open = planUI.open === v ? null : v; renderPlanner(); break;
+    case "plan-meal": closeSheet(); openPlanMeal(v); break;
+    case "plan-log":
+      logPlanMeal(v);
+      if (!$("#sheet").hidden) { closeSheet(); openPlanMeal(v); } else render();
+      break;
+    case "plan-rm-meal": {
+      if (!confirm("Remove this meal from the plan? Its ingredients come off the grocery list.")) break;
+      const [d, id] = v.split("|");
+      const day = state.plan.days.find((x) => x.date === d);
+      day.meals = day.meals.filter((m) => m.id !== id);
+      save(); closeSheet(); openPlanner("plan");
+      break;
+    }
+    case "plan-uncheck": state.plan.checked = {}; save(); renderPlanner(); break;
+    case "plan-send": sendPlan(); break;
+    case "plan-share-list": shareGroceries(); break;
     case "coach-pick":
       p.coach = { ...coachCfg(), id: v }; save();
       document.querySelectorAll(".coach-card").forEach((b) => b.classList.toggle("on", b === t));

@@ -13,6 +13,8 @@ A calorie and macro tracker that runs as an installable web app (PWA) on iPhone,
 - Personal records (best output, distance, duration, calories, steps) and a weekly workouts/active-minutes goal.
 - Private body measurements, progress photos (stored in IndexedDB) and optional cycle tracking. These are never shared.
 - Claude food coach: meal ideas for what's left today, a weekly eating review, and strict dietary needs such as gluten-free.
+- Weekly household meal plan: built by pasting a request into the Claude app (no API cost) or with the API key; shared meals with per-person portions, one combined grocery checklist, one-tap logging from the plan, and sharing to a partner's phone as a file.
+- Coach personalities with pre-written pop-up lines (edit `coaches.js`), including seasonal holiday guests.
 - Several people per device, each with their own theme (7 colors plus light, dark or match phone).
 - Backup/restore to a JSON file. Works offline, except photo estimates.
 
