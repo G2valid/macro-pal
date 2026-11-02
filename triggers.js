@@ -35,6 +35,8 @@ export const TRIGGERS = [
   ["calories_over_small", "nudge"],
   ["streak_broken", "nudge"],
   ["return_after_2_days", "nudge"],
+  ["day_under_calories_way", "nudge"],
+  ["calories_low_late", "nudge"],
   ["day_under_calories_nudge", "nudge"],
   ["nothing_logged_afternoon", "nudge"],
   ["protein_low_late", "nudge"],
@@ -73,9 +75,11 @@ export const TRIGGER_META = Object.fromEntries(
 
 // day_under_calories is one trigger for the line writers; its type depends on the goal.
 export const LINE_ID = { day_under_calories_positive: "day_under_calories", day_under_calories_nudge: "day_under_calories", day_under_calories_small: "day_under_calories" };
+// day_under_calories_way and calories_low_late have their own lines (and fall back to the ones above).
 
-// Until a coach has lines for a trigger, borrow its closest starter line.
+// Until a coach has lines for a trigger, borrow its closest line (followed as a chain).
 export const FALLBACK = {
+  day_under_calories_way: "day_under_calories", calories_low_late: "missed",
   app_open_morning: "morning", app_open_afternoon: "afternoon", app_open_evening: "evening", app_open_late: "evening",
   monday_open: "morning", friday_open: "afternoon", weekend_open: "morning",
   nothing_logged_afternoon: "missed", return_after_2_days: "missed", return_after_7_days: "missed",
@@ -96,7 +100,7 @@ export const FALLBACK = {
 
 // Thresholds (fractions of the goal unless noted)
 export const T = {
-  calClose: 0.85, calHit: 0.95, calOverLarge: 1.10,
+  calClose: 0.85, calHit: 0.95, calOverLarge: 1.10, calWayUnder: 0.75, calLowLate: 0.6,
   proHalf: 0.5, proClose: 0.9, proOver: 1.2, proLowLate: 0.5,
   half: 0.5, close: 0.85,
   lateHour: 18, afternoonCutoff: 14, nightStart: 22, nightEnd: 4,

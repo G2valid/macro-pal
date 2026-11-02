@@ -1,8 +1,8 @@
 import { estimateFood, readFitnessScreens, suggestMeals, reviewEating, suggestExampleDay, readLabel, generatePlan, prepareImage, MODELS, DEFAULT_MODEL } from "./ai.js?v=10";
 import { buildPlanPrompt, parsePlanReply, normalizePlan, groceryList, groceryText, fmtQty } from "./planner.js?v=1";
 import { buildExampleDay, mealBudgets, MEAL_PATTERNS } from "./mealplan.js?v=2";
-import { COACHES, DEFAULT_COACH, seasonalCoach, coachLine } from "./coaches.js?v=2";
-import { TRIGGER_META, LINE_ID, FALLBACK, T } from "./triggers.js?v=1";
+import { COACHES, DEFAULT_COACH, seasonalCoach, coachLine } from "./coaches.js?v=3";
+import { TRIGGER_META, LINE_ID, FALLBACK, T } from "./triggers.js?v=2";
 
 /* =========================================================
    Storage
@@ -2577,8 +2577,9 @@ function coachSay(id, { force = false } = {}) {
   let who = cfg.id;
   const guest = cfg.holidays && !force && seasonalCoach();
   if (guest && guest !== who && Math.random() < 0.35) who = guest;
-  const lineId = LINE_ID[id] || id;
-  const text = coachLine(who, lineId, { goal: computeTargets().direction, vars: coachVars(), fallback: FALLBACK[lineId] });
+  const chain = [LINE_ID[id] || id];
+  while (FALLBACK[chain[chain.length - 1]] && chain.length < 4) chain.push(FALLBACK[chain[chain.length - 1]]);
+  const text = coachLine(who, chain, { goal: computeTargets().direction, vars: coachVars() });
   if (!text) return false;
   const type = TRIGGER_META[id]?.type;
   if (!force) {
@@ -2691,9 +2692,11 @@ function coachOnOpen() {
     const yd = dayData(yesterday);
     if (yd.entries.length) {
       const yGoal = dayGoal(yesterday).kcal;
-      if (totals(yd.entries).kcal < yGoal * T.calHit) {
+      const yKcal = totals(yd.entries).kcal;
+      if (yKcal < yGoal * T.calHit) {
         const dir = computeTargets().direction;
-        out.push(dir === "lose" ? "day_under_calories_positive" : dir === "gain" ? "day_under_calories_nudge" : "day_under_calories_small");
+        if (dir === "lose") out.push(yKcal < yGoal * T.calWayUnder ? "day_under_calories_way" : "day_under_calories_positive");
+        else out.push(dir === "gain" ? "day_under_calories_nudge" : "day_under_calories_small");
       }
     }
     const wd = now.getDay();
@@ -2708,6 +2711,7 @@ function coachOnOpen() {
   if (h >= T.lateHour) {
     const tg = dayGoal(t);
     if (day.entries.length && totals(day.entries).p < tg.protein * T.proLowLate) out.push("protein_low_late");
+    if (computeTargets().direction === "gain" && totals(day.entries).kcal < tg.kcal * T.calLowLate) out.push("calories_low_late");
     const active = (d) => (d.workouts || []).length || d.activity?.steps;
     if (!active(day) && recentlyUsed(active)) out.push("steps_low_late");
     const wg = p.waterGoal || 8;

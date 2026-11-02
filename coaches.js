@@ -14,6 +14,8 @@
 //   streak      logging streak milestone      water     water goal reached
 //   tip         random tip
 
+import { WHISKERS } from "./coaches/whiskers.js?v=1";
+
 export const COACHES = {
   bestie: {
     name: "Hype Bestie", emoji: "💅", vibe: "Screams in all caps for every win",
@@ -104,27 +106,9 @@ export const COACHES = {
   },
 
   cat: {
-    name: "Sir Whiskers", emoji: "🐱", vibe: "A sassy cat who judges (lovingly)",
-    lines: {
-      morning: ["Meow. You're up. Where is my breakfast? Oh, yours. Fine.", "*stretches* Good morning, human {name}."],
-      afternoon: ["It's nap o'clock, but you may continue tracking.", "*knocks your snack off the table* Log it anyway."],
-      evening: ["Evening, human. I approve of your efforts. Mostly.", "*purrs* You did adequately today. High praise."],
-      food: ["You logged it. I shall allow it.", "*sniffs food* Acceptable.", "Logged. Now share some tuna."],
-      protein: ["Protein goal reached. Even I'm impressed. *slow blink*", "You ate like a hunter today. Purrfect."],
-      over: ["Over today? I eat 12 times a day. No judgment. Okay, a little.", "*shrugs in cat* Tomorrow, human."],
-      onTrack: ["On target all day. You may pet me now.", "Purrfectly balanced. I approve."],
-      missed: ["*stares at you* You haven't logged anything.", "The food log is emptier than my bowl. Fix that."],
-      workout: ["You chased something today? Good hunter. 🐾", "Workout logged. I did zoomies too."],
-      pr: ["A new record! You've earned the sunny spot on the couch.", "PR?! *purrs at maximum volume*"],
-      week: ["Weekly goal done. Here's a dead mouse. It's a gift.", "A whole week. Purr-sistent."],
-      weighDown: ["Scale's down. Do you want me to sit on it to check?", "Down this week. Clawsome."],
-      weighUp: ["Scale went up. I gain weight every winter too. It's fine.", "Up a bit. Stop staring at the number, stare at me instead."],
-      streak: ["{streak} days in a row. Cats sleep {streak} hours. Coincidence? 🐾", "{streak}-day streak. Feline fine."],
-      water: ["You drank all your water. I prefer the faucet, personally.", "Hydrated. Paw-some."],
-      tip: ["Tip from a cat: naps are recovery. Take one.", "Eat your protein. Be the apex predator.", "Stretch like a cat when you wake up. Trust me."],
-    },
+    name: "Sir Whiskers", emoji: "🐈‍⬛", vibe: "A strict, chonky black cat. He doesn't yell. He looks disappointed.",
+    lines: WHISKERS,
   },
-
   popstar: {
     name: "Ricky Rollerblade", emoji: "🎤", vibe: "A '90s pop heartthrob with frosted tips",
     lines: {
@@ -306,16 +290,21 @@ export function seasonalCoach(date = new Date()) {
 
 /**
  * Pick a line for a trigger, filling in placeholders.
- * A coach's lines[trigger] can be a list, or { lose, gain, maintain, any } lists.
- * Falls back to the trigger's starter event, then to the default coach.
+ * A coach's lines[trigger] can be a list, or { lose, gain, maintain, any, rare, ultra } lists.
+ * rare lines show about 1 in 10 times and ultra about 1 in 50 (override with rareChance / ultraChance).
+ * Tries each id in `chain` (the trigger, then its fallbacks) for the coach, then for the default coach.
  */
-export function coachLine(coachId, trigger, { goal = "any", vars = {}, fallback = null } = {}) {
+export function coachLine(coachId, chain, { goal = "any", vars = {} } = {}) {
+  const ids = Array.isArray(chain) ? chain : [chain];
   const pickFrom = (entry) => {
     if (!entry) return null;
     if (Array.isArray(entry)) return entry.length ? entry : null;
+    const roll = Math.random();
+    if (entry.ultra?.length && roll < (entry.ultraChance ?? 0.02)) return entry.ultra;
+    if (entry.rare?.length && roll < (entry.ultraChance ?? 0.02) + (entry.rareChance ?? 0.1)) return entry.rare;
     return [entry[goal], entry.any].find((l) => l?.length) || null;
   };
-  const tryCoach = (c) => c && (pickFrom(c.lines[trigger]) || (fallback && pickFrom(c.lines[fallback])));
+  const tryCoach = (c) => { if (!c) return null; for (const id of ids) { const l = pickFrom(c.lines[id]); if (l) return l; } return null; };
   const list = tryCoach(COACHES[coachId]) || tryCoach(COACHES[DEFAULT_COACH]);
   if (!list) return null;
   const line = list[Math.floor(Math.random() * list.length)];

@@ -10,11 +10,14 @@ Reference for writing coach lines. The trigger engine lives in `triggers.js` (th
 - Each trigger fires once a day unless marked "repeats". Weight milestones fire once per goal (changing the goal resets them).
 - Holiday guests replace the chosen coach about 1 in 3 times during their season.
 
+## Rare lines
+Each trigger can also have `rare` lines (shown about 1 in 10 times) and `ultra` lines (about 1 in 50). A trigger can raise those odds, e.g. Sir Whiskers' goal-weight lines. In the CSV, use goal `rare` or `ultra`.
+
 ## Placeholders
 `{name}` `{streak}` `{protein_left}` `{kcal_left}` `{lbs_to_goal}` `{lbs_lost}` `{unit}` (lb or kg; the lbs_ values follow the person's units)
 
 ## Line file format
-CSV with columns `coach,trigger,goal,line`. goal is `lose`, `gain`, `maintain` or `any`. If there's no line for the person's goal, the coach's `any` line is used, then the closest starter line. Several lines per trigger are picked at random.
+CSV with columns `coach,trigger,goal,line`. goal is `lose`, `gain`, `maintain`, `any`, `rare` or `ultra`. If there's no line for the person's goal, the coach's `any` line is used, then the closest starter line. Several lines per trigger are picked at random.
 
 Coach IDs: bestie, dj, drill, surfer, cat, popstar, dad, turkey, santa, bunny, spooky, cupid.
 
@@ -39,6 +42,8 @@ Coach IDs: bestie, dj, drill, surfer, cat, popstar, dad, turkey, santa, bunny, s
 | `calories_over_small` | Calories go over goal, up to +10% | nudge |
 | `calories_over_large` | Calories go more than 10% over goal | nudge |
 | `day_under_calories` | First open of the day: yesterday was logged and under 95% of goal. Big for lose, nudge for gain, small for maintain | goal-based |
+| `day_under_calories_way` | Losing weight only: yesterday was logged and under 75% of goal (gets "eat enough" lines instead of praise) | nudge |
+| `calories_low_late` | Gaining weight only: opened after 6 pm with calories under 60% of goal | nudge |
 | `protein_halfway` | Protein crosses 50% of goal | small |
 | `protein_close` | Protein crosses 90% of goal | small |
 | `protein_hit` | Protein reaches 100% of goal (confetti) | big |
