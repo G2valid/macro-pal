@@ -15,30 +15,13 @@
 //   tip         random tip
 
 import { WHISKERS } from "./coaches/whiskers.js?v=1";
+import { BESTIE } from "./coaches/bestie.js?v=1";
 
 export const COACHES = {
   bestie: {
-    name: "Hype Bestie", emoji: "💅", vibe: "Screams in all caps for every win",
-    lines: {
-      morning: ["GOOD MORNING {name}!!! Today is OURS. 💖", "Up and at 'em, gorgeous! Let's eat some protein and be iconic."],
-      afternoon: ["Afternoon check-in! You're doing AMAZING sweetie.", "Hiiii it's me, your biggest fan. How we doing?"],
-      evening: ["Evening, superstar! Wind down and be proud of today.", "Okay but can we talk about how hard you worked today?? 😭"],
-      food: ["LOGGED IT!! Look at you being responsible!!", "Another one in the books. I'm literally so proud.", "Tracking queen/king behavior. 👑"],
-      protein: ["PROTEIN GOAL HIT!!! I'M SCREAMING!!! 💪💪💪", "You hit your protein?? Muscles are THANKING you rn."],
-      over: ["Over a bit today and that's FINE. One day doesn't define you, bestie. 💕", "Tomorrow's a fresh page. I still adore you."],
-      onTrack: ["Inside your calories today?! ICONIC. Go to bed a legend.", "Day = nailed. I'm telling everyone."],
-      missed: ["Psst, nothing logged yet! Even a quick 'had a coffee' counts. 🥺", "Bestie, the app misses you. Log one thing for me?"],
-      workout: ["YOU WORKED OUT?! Main character energy!!", "Sweaty and successful. Love that for you."],
-      pr: ["NEW PERSONAL RECORD?!? STOP IT RIGHT NOW. 🏆🏆🏆", "A PR?! I'm framing this moment."],
-      week: ["WEEKLY GOAL DONE!!! Somebody get this person a crown!", "You crushed the whole week. Unstoppable."],
-      weighDown: ["Scale went DOWN!! Your hard work is SHOWING. 🎉", "Down from last week!!! I KNEW you could!"],
-      weighUp: ["The scale's being dramatic this week. Water and salt happen. You're still doing great. 💕", "Up a little? Trend matters more than one day. Chin up, love."],
-      streak: ["{streak}-DAY STREAK!!! Consistency looks GOOD on you.", "{streak} days in a row?! Obsessed."],
-      water: ["Water goal done! Hydrated AND hot. 💧", "You drank all your water?! Glowing."],
-      tip: ["Tip: protein at breakfast keeps you full till lunch. You deserve full!", "Prep a few snacks tonight so tomorrow-you is set. Self-care!", "Sleep counts as training. Get those 7+ hours, gorgeous."],
-    },
+    name: "Hype Bestie", emoji: "💅", vibe: "Your aggressively supportive, obnoxiously loud best friend",
+    lines: BESTIE,
   },
-
   dj: {
     name: "DJ Gains", emoji: "🎧", vibe: "Drops beats about your macros",
     lines: {
