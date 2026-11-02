@@ -31,6 +31,22 @@ const F = {
   almonds: { name: "almonds", p: 21, c: 22, f: 50, unit: "oz", unitG: 28, step: 0.5 },
   pepitas: { name: "pumpkin seeds", p: 30, c: 10, f: 49, unit: "oz", unitG: 28, step: 0.5 },
   cheese: { name: "cheddar cheese", p: 25, c: 1.3, f: 33, unit: "oz", unitG: 28, step: 0.5 },
+  beef93: { name: "93% lean ground beef", short: "Beef", p: 26, c: 0, f: 8, unit: "oz", unitG: 28.35, step: 0.5 },
+  honey: { name: "hot honey", p: 0.3, c: 82, f: 0, unit: "tbsp", unitG: 21, fixed: 1 },
+  riceCake: { name: "rice cake", plural: "rice cakes", p: 8, c: 80, f: 3, unit: "", unitG: 9, step: 1 },
+  jerky: { name: "beef jerky", gf: "gluten-free beef jerky", p: 33, c: 11, f: 7, unit: "oz", unitG: 28, step: 0.5 },
+  turkeyDeli: { name: "sliced deli turkey", p: 18, c: 2, f: 2, unit: "oz", unitG: 28, step: 1 },
+  tuna: { name: "tuna (canned in water)", p: 26, c: 0, f: 1, unit: "oz", unitG: 28, step: 0.5 },
+  edamame: { name: "shelled edamame", p: 11, c: 9, f: 5, unit: "cup", unitG: 155, step: 0.25 },
+  stringCheese: { name: "string cheese", plural: "string cheese sticks", p: 24, c: 3, f: 21, unit: "", unitG: 28, step: 1 },
+  chocMilk: { name: "low-fat chocolate milk", p: 3.2, c: 10, f: 1, unit: "cup", unitG: 250, step: 0.5 },
+  pineapple: { name: "pineapple", p: 0.5, c: 13, f: 0.1, unit: "cup", unitG: 165, step: 0.25 },
+  grapes: { name: "frozen grapes", p: 0.7, c: 18, f: 0.2, unit: "cup", unitG: 151, step: 0.25 },
+  popcorn: { name: "air-popped popcorn", p: 13, c: 78, f: 4.5, unit: "cups", unitG: 8, step: 1 },
+  hummus: { name: "hummus", p: 8, c: 14, f: 18, unit: "tbsp", unitG: 15, step: 1 },
+  chocChips: { name: "dark chocolate chips", p: 6, c: 60, f: 30, unit: "tbsp", unitG: 10, step: 0.5 },
+  cocoa: { name: "cocoa powder", p: 20, c: 58, f: 14, unit: "tbsp", unitG: 5, fixed: 1 },
+  veggies: { name: "carrot & cucumber sticks", p: 1, c: 7, f: 0.2, unit: "cup", unitG: 110, fixed: 1 },
   broccoli: { name: "broccoli", p: 2.8, c: 7, f: 0.4, unit: "cup", unitG: 91, fixed: 1 },
   salad: { name: "salad greens", p: 1.4, c: 3, f: 0.2, unit: "cups", unitG: 35, fixed: 2 },
 };
@@ -41,21 +57,35 @@ const TEMPLATES = {
     ["Yogurt power bowl", "greekYog", "berries", "almonds"],
     ["Eggs, toast & avocado", "eggWhites", "toast", "egg", null, "avocado"],
     ["Protein oats", "whey", "oats", "pb"],
+    ["🔥 Viral baked oats", "greekYog", "oats", "egg"],
   ],
   lunch: [
     ["{P} rice bowl", "chicken", "rice", "avocado", "broccoli"],
     ["{P} tacos", "turkey", "tortilla", "cheese", "salad"],
     ["{P} stir-fry", "shrimp", "rice", "oil", "broccoli"],
+    ["🔥 Smash burger tacos", "beef93", "tortilla", "cheese", "salad"],
   ],
   dinner: [
     ["{P} & potatoes", "salmon", "potato", "oil", "broccoli"],
     ["{P} & sweet potato", "chicken", "sweetPotato", "oil", "salad"],
     ["{P} burrito bowl", "turkey", "rice", "avocado", "salad"],
+    ["🔥 Hot honey {P} bowl", "chicken", "rice", "avocado", "broccoli", "honey"],
   ],
   snack: [
-    ["Yogurt & banana", "greekYog", "banana", "pb"],
-    ["Cottage cheese & berries", "cottage", "berries", "almonds"],
+    ["Chocolate PB protein pudding", "greekYog", "banana", "pb", "cocoa"],
+    ["Jerky & cheese snack box", "jerky", "grapes", "stringCheese"],
+    ["Cottage cheese & pineapple", "cottage", "pineapple", "almonds"],
+    ["Tuna avocado rice cakes", "tuna", "riceCake", "avocado"],
+    ["🔥 Viral frozen yogurt bark", "greekYog", "berries", "chocChips"],
+    ["🔥 Protein cookie dough", "greekYog", "riceCake", "pb", "cocoa"],
+    ["🔥 Cottage cheese \"ice cream\"", "cottage", "berries", "pb"],
+    ["Turkey & cheese roll-ups", "turkeyDeli", "riceCake", "stringCheese"],
+    ["Hummus & veggie plate", "edamame", "riceCake", "hummus", "veggies"],
     ["Protein shake & apple", "whey", "apple", "almonds"],
+    ["Hard-boiled eggs & frozen grapes", "egg", "grapes", "almonds"],
+    ["Movie-night popcorn & cheese", "stringCheese", "popcorn", "chocChips"],
+    ["Chocolate milk & PB rice cake", "chocMilk", "riceCake", "pb"],
+    ["Yogurt, banana & PB", "greekYog", "banana", "pb"],
   ],
 };
 
@@ -81,7 +111,7 @@ function swapFor(key, diet) {
   const vegan = has("Vegan");
   const veg = vegan || has("Vegetarian");
   const dairyFree = vegan || has("Dairy-free");
-  if ((veg && ["chicken", "salmon", "turkey", "shrimp"].includes(key)) || (has("Pescatarian") && ["chicken", "turkey"].includes(key))) {
+  if ((veg && ["chicken", "salmon", "turkey", "shrimp", "beef93"].includes(key)) || (has("Pescatarian") && ["chicken", "turkey", "beef93"].includes(key))) {
     return has("Pescatarian") && !veg ? "salmon" : "tofu";
   }
   if (vegan && ["egg", "eggWhites"].includes(key)) return "tofu";
@@ -158,7 +188,9 @@ function buildMeal(tpl, b, diet) {
   }
   for (const x of fitted) if (x.fd.unit === "tsp" && x.units >= 3) x.units = Math.round(x.units / 1.5) * 1.5; // whole or half tablespoons
   const items = [...fitted.filter((x) => x.units > 0).map((x) => itemFor(x.fd, x.units)), ...fixedItems];
-  return { title: title.replace("{P}", foods[0].short || ""), items, total: sum(items), miss: missOf(fitted) };
+  const short = foods[0].short || "";
+  const named = title.startsWith("{P}") ? title.replace("{P}", short) : title.replace("{P}", short.toLowerCase());
+  return { title: named, items, total: sum(items), miss: missOf(fitted) };
 }
 
 /** Build an example day. seed rotates which meals come first; poor fits are skipped. */
@@ -172,7 +204,8 @@ export function buildExampleDay(targets, pattern = "3+1", diet = [], seed = 0) {
     used[b.kind] = start + 1;
     const tries = opts.map((_, i) => buildMeal(opts[(start + i) % opts.length], b, diet));
     const best = tries.reduce((a, m) => (m.miss < a.miss ? m : a));
-    const pick = tries.find((m) => m.miss <= 0.12 && !picked.has(m.title)) || tries.find((m) => m.miss <= 0.12) || best;
+    const ok = b.kind === "snack" ? 0.3 : 0.12; // small snacks can't round as precisely
+    const pick = tries.find((m) => m.miss <= ok && !picked.has(m.title)) || tries.find((m) => m.miss <= ok) || best;
     picked.add(pick.title);
     return { ...b, title: pick.title, items: pick.items, total: pick.total };
   });

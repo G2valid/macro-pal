@@ -1,5 +1,5 @@
-import { estimateFood, readFitnessScreens, suggestMeals, reviewEating, suggestExampleDay, readLabel, prepareImage, MODELS, DEFAULT_MODEL } from "./ai.js?v=8";
-import { buildExampleDay, mealBudgets, MEAL_PATTERNS } from "./mealplan.js?v=1";
+import { estimateFood, readFitnessScreens, suggestMeals, reviewEating, suggestExampleDay, readLabel, prepareImage, MODELS, DEFAULT_MODEL } from "./ai.js?v=9";
+import { buildExampleDay, mealBudgets, MEAL_PATTERNS } from "./mealplan.js?v=2";
 
 /* =========================================================
    Storage
