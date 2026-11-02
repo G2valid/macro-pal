@@ -18,6 +18,7 @@ import { WHISKERS } from "./coaches/whiskers.js?v=1";
 import { BESTIE } from "./coaches/bestie.js?v=1";
 import { DJ } from "./coaches/dj.js?v=1";
 import { DRILL } from "./coaches/drill.js?v=1";
+import { SURFER } from "./coaches/surfer.js?v=1";
 
 export const COACHES = {
   bestie: {
@@ -33,27 +34,9 @@ export const COACHES = {
     lines: DRILL,
   },
   surfer: {
-    name: "Surfer Dude", emoji: "🏄", vibe: "Totally rad gains, bro",
-    lines: {
-      morning: ["Duuude, morning {name}! Waves of opportunity today. 🌊", "Rise and shine, brah. Breakfast is the first set."],
-      afternoon: ["Afternoon, dude. Riding this day like a pro.", "Yo {name}, how's the swell? Keep paddling."],
-      evening: ["Sunset vibes, bro. Chill and recover. 🌅", "Evening, dude. Catch some Z's, catch some gains."],
-      food: ["Logged, bro. Radical.", "Gnarly meal, dude. 🤙", "Stoked you tracked that, brah."],
-      protein: ["Protein goal, bro! Totally tubular gains! 🤙", "Dude. You hit protein. That's a perfect wave."],
-      over: ["Wiped out a little today? Happens to every surfer, bro. Paddle back out tomorrow.", "No worries, dude. Ocean's still there tomorrow."],
-      onTrack: ["Rode the whole day clean, bro. Epic. 🌊", "Calories on point. Totally rad."],
-      missed: ["Duuude, nothing logged? Drop in and track a snack, bro.", "Yo, the log's flat like no-swell day. What'd you eat?"],
-      workout: ["Workout done, bro! You shredded it! 🤘", "Gnarly session, dude."],
-      pr: ["New PR?! That's like a 20-foot barrel, bro! 🏆", "Dude. DUDE. Personal record. Legendary."],
-      week: ["Whole week goal crushed, bro. Big wave energy.", "Weekly goal: stoked out of my mind, dude."],
-      weighDown: ["Scale's down, bro! Riding that wave! 🌊", "Down this week, dude. Totally rad."],
-      weighUp: ["Little choppy this week, bro. The tide always comes back. 🤙", "Scale's up a smidge. No stress, it's just water, dude."],
-      streak: ["{streak} days in a row, brah! You're in the barrel!", "{streak}-day streak, dude. Stoked."],
-      water: ["Water goal hit, dude. Ocean-level hydration. 💧", "Hydrated like a sea turtle, bro."],
-      tip: ["Dude, fruit and Greek yogurt = epic post-surf snack. Or post-anything.", "Sleep is the best wax for your board, bro. Get 8.", "Eat your greens, dude. Kelp-adjacent energy."],
-    },
+    name: "Surfer Dude", emoji: "🏄", vibe: "The most relaxed human alive. Catch the next wave.",
+    lines: SURFER,
   },
-
   cat: {
     name: "Sir Whiskers", emoji: "🐈‍⬛", vibe: "A strict, chonky black cat. He doesn't yell. He looks disappointed.",
     lines: WHISKERS,
