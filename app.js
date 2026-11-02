@@ -1,8 +1,8 @@
 import { estimateFood, readFitnessScreens, suggestMeals, reviewEating, suggestExampleDay, readLabel, generatePlan, prepareImage, MODELS, DEFAULT_MODEL } from "./ai.js?v=10";
 import { buildPlanPrompt, parsePlanReply, normalizePlan, groceryList, groceryText, fmtQty } from "./planner.js?v=1";
 import { buildExampleDay, mealBudgets, MEAL_PATTERNS } from "./mealplan.js?v=2";
-import { COACHES, DEFAULT_COACH, seasonalCoach, coachLine } from "./coaches.js?v=9";
-import { TRIGGER_META, LINE_ID, FALLBACK, T } from "./triggers.js?v=2";
+import { COACHES, DEFAULT_COACH, seasonalCoach, coachLine, guestChance, phaseLine } from "./coaches.js?v=10";
+import { TRIGGER_META, LINE_ID, FALLBACK, T } from "./triggers.js?v=3";
 
 /* =========================================================
    Storage
@@ -908,7 +908,7 @@ function addEntry(en, { saveFood = true, ai = false } = {}) {
   day.entries.push(entry);
   if (saveFood) rememberFood(en);
   save();
-  if (currentDay === today()) coachFire(foodTriggers(beforeTot, totals(day.entries), firstToday));
+  if (currentDay === today()) coachFire(foodTriggers(beforeTot, totals(day.entries), firstToday, en.name));
   return entry;
 }
 function rememberFood(en) {
@@ -2577,10 +2577,10 @@ function coachSay(id, { force = false } = {}) {
   if (!force && !coachAllowed(id, log, cfg)) return false;
   let who = cfg.id;
   const guest = cfg.holidays && !force && seasonalCoach();
-  if (guest && guest !== who && Math.random() < 0.35) who = guest;
+  if (guest && guest !== who && Math.random() < guestChance(guest)) who = guest;
   const chain = [LINE_ID[id] || id];
   while (FALLBACK[chain[chain.length - 1]] && chain.length < 4) chain.push(FALLBACK[chain[chain.length - 1]]);
-  const text = coachLine(who, chain, { goal: computeTargets().direction, vars: coachVars() });
+  const text = (!force && phaseLine(who, chain[0])) || coachLine(who, chain, { goal: computeTargets().direction, vars: coachVars() });
   if (!text) return false;
   const type = TRIGGER_META[id]?.type;
   if (!force) {
@@ -2635,10 +2635,11 @@ function crossed(before, after, steps) {
   return steps.filter(([f]) => before < f && after >= f).map(([, id]) => id);
 }
 
-function foodTriggers(beforeTot, afterTot, firstToday) {
+function foodTriggers(beforeTot, afterTot, firstToday, name = "") {
   const p = P();
   const tg = dayGoal(today());
   const out = [firstToday ? "food_first_log" : "food_logged"];
+  if (/turkey/i.test(name) && Math.random() < 0.5) out.push("food_turkey");
   const cb = beforeTot.kcal / tg.kcal, ca = afterTot.kcal / tg.kcal;
   const calBand = (r) => (r > T.calOverLarge ? 4 : r > 1 ? 3 : r >= T.calHit ? 2 : r >= T.calClose ? 1 : 0);
   const bb = calBand(cb), ba = calBand(ca);
@@ -2856,7 +2857,7 @@ document.addEventListener("click", (ev) => {
     case "coach-pick":
       p.coach = { ...coachCfg(), id: v }; save();
       document.querySelectorAll(".coach-card").forEach((b) => b.classList.toggle("on", b === t));
-      coachSay("app_open_morning", { force: true });
+      coachSay(v === "turkey" && new Date().getMonth() !== 10 ? "coach_picked_offseason" : "app_open_morning", { force: true });
       break;
     case "coach-freq":
       p.coach = { ...coachCfg(), freq: v }; save();

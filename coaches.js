@@ -21,6 +21,7 @@ import { DRILL } from "./coaches/drill.js?v=1";
 import { SURFER } from "./coaches/surfer.js?v=1";
 import { RICKY } from "./coaches/ricky.js?v=1";
 import { DAD } from "./coaches/dad.js?v=1";
+import { TOM, TOM_PHASES, tomPhase } from "./coaches/tom.js?v=1";
 
 export const COACHES = {
   bestie: {
@@ -53,27 +54,13 @@ export const COACHES = {
   },
   // Holiday guests (appear during their season; choose them any time)
   turkey: {
-    name: "Tom the Turkey", emoji: "🦃", vibe: "Thanksgiving guest", season: "nov",
-    lines: {
-      morning: ["Gobble gobble, {name}! Grateful you're here today.", "Morning! I'm thankful for you. Also nervous about Thursday."],
-      afternoon: ["Afternoon! Have you considered... eating more chicken instead of turkey? Asking for me.", "Gobble check-in! How's the day?"],
-      evening: ["Evening, friend. Grateful for your hard work today. 🍂", "Gobble goodnight!"],
-      food: ["Logged! Gobble-approved. 🦃", "Nice log! Just... maybe skip the turkey? Kidding. Mostly."],
-      protein: ["Protein goal hit! Please tell me it wasn't turkey. 😬", "Protein done! Gobble gobble, champion!"],
-      over: ["Over a bit? It's the season of feasting. Back on track tomorrow!", "Even pilgrims had seconds. Fresh start tomorrow."],
-      onTrack: ["On target! That's something to be thankful for. 🍁", "Calories on point. Pass the gratitude."],
-      missed: ["Nothing logged yet? Gobble up a snack and track it!", "The log's emptier than a plate after dinner. Log something!"],
-      workout: ["Workout done! Way to burn off the stuffing in advance!", "Great workout! I'd join, but I'm saving my legs. (Drumsticks.)"],
-      pr: ["New PR! Thankful for gains! 🏆", "Personal record! Gobble-iciously good!"],
-      week: ["Weekly goal crushed. I'm thankful for YOU.", "Full week done! Pie-sized pride."],
-      weighDown: ["Scale's down! Before the feast, even! 🦃", "Down this week! Gobble yeah!"],
-      weighUp: ["Little holiday bump. Totally normal. Gratitude over guilt.", "Scale's up? It's the gravy. It'll pass."],
-      streak: ["{streak}-day streak! Grateful for consistency!", "{streak} days! Gobble gobble, legend."],
-      water: ["Water goal hit! Better than gravy. Hydrating.", "All your water! Thankful for hydration."],
-      tip: ["Feast tip: fill half the plate with veggies, then enjoy the good stuff.", "Take a walk after the big meal. It's tradition (now).", "Pie is fine. One slice, savor it, zero guilt."],
-    },
+    name: "Tom the Turkey", emoji: "🦃", vibe: "Thanksgiving guest. He knows. He's not panicking.", season: "nov",
+    lines: TOM,
+    // Which phase lines apply today, and how often Tom drops in as a guest.
+    phasesFor: (date) => { const p = tomPhase(date); return p === "day" ? ["day", "dayOver"] : p ? [p] : []; },
+    phases: TOM_PHASES,
+    guestChance: (date) => ({ early: 0.35, mid: 0.4, week: 0.6, eve: 0.85, day: 0.9, after: 0.85, dec1: 0.9 })[tomPhase(date)] ?? 0.35,
   },
-
   santa: {
     name: "Santa Claus", emoji: "🎅", vibe: "Christmas guest", season: "dec",
     lines: {
@@ -176,6 +163,7 @@ function easter(year) {
 /** Which holiday coach is in season on a date, if any. */
 export function seasonalCoach(date = new Date()) {
   const m = date.getMonth() + 1, d = date.getDate();
+  if (m === 12 && d === 1) return "turkey"; // Tom's farewell
   if (m === 10) return "spooky";
   if (m === 11) return "turkey";
   if (m === 12 && d <= 26) return "santa";
@@ -207,4 +195,22 @@ export function coachLine(coachId, chain, { goal = "any", vars = {} } = {}) {
   if (!list) return null;
   const line = list[Math.floor(Math.random() * list.length)];
   return line.replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? ""));
+}
+
+/** How often a holiday guest replaces the chosen coach today (default about 1 in 3). */
+export function guestChance(coachId, date = new Date()) {
+  return COACHES[coachId]?.guestChance?.(date) ?? 0.35;
+}
+
+/** Date-specific lines (e.g. Tom's Thanksgiving countdown) that take over a trigger today, if any. */
+export function phaseLine(coachId, trigger, date = new Date()) {
+  const c = COACHES[coachId];
+  if (!c?.phasesFor) return null;
+  for (const key of c.phasesFor(date)) {
+    const ph = c.phases[key];
+    if (ph && ph.triggers.includes(trigger) && Math.random() < ph.chance) {
+      return ph.lines[Math.floor(Math.random() * ph.lines.length)];
+    }
+  }
+  return null;
 }
