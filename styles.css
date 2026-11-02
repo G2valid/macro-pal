@@ -15,6 +15,7 @@
   --fat: #1baf7a;
   --water: #3b82f6;
   --warn: #b45309;
+  --ci: #f59e0b;
   --danger: #c2410c;
   --radius: 18px;
   --shadow: 0 1px 2px rgba(0,0,0,.05), 0 6px 20px rgba(0,0,0,.06);
@@ -484,4 +485,94 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; }
 .field input[type="checkbox"], input[type="checkbox"] {
   -webkit-appearance: checkbox; appearance: auto; width: 22px; height: 22px; padding: 0; border: 0;
   accent-color: var(--accent); flex: none;
+}
+
+/* =========================================================
+   ✨ Glow (Settings → Theme → Glow: Off / Glow / Neon)
+   ========================================================= */
+:root[data-glow="on"]   { --glow: color-mix(in srgb, var(--g1) 45%, transparent); --glow-soft: color-mix(in srgb, var(--g1) 20%, transparent); --glow-r: 18px; --glow-edge: color-mix(in srgb, var(--g1) 28%, var(--line)); }
+:root[data-glow="neon"] { --glow: color-mix(in srgb, var(--g1) 75%, transparent); --glow-soft: color-mix(in srgb, var(--g1) 38%, transparent); --glow-r: 30px; --glow-edge: color-mix(in srgb, var(--g1) 60%, var(--line)); }
+
+/* Drifting aurora behind everything */
+:root:not([data-glow="off"]) body::before {
+  content: ""; position: fixed; inset: -20vmax; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(38vmax 30vmax at 80% 10%, color-mix(in srgb, var(--g1) 30%, transparent), transparent 70%),
+    radial-gradient(34vmax 30vmax at 10% 55%, color-mix(in srgb, var(--g2) 24%, transparent), transparent 70%),
+    radial-gradient(30vmax 24vmax at 85% 90%, color-mix(in srgb, var(--g1) 16%, transparent), transparent 70%);
+  animation: aurora 22s ease-in-out infinite alternate;
+}
+:root[data-glow="neon"] body::before { filter: saturate(1.4) brightness(1.15); }
+@keyframes aurora { to { transform: translate3d(4vmax, -3vmax, 0) rotate(8deg) scale(1.08); } }
+
+/* Cards & lists: lit edge + colored halo */
+:root:not([data-glow="off"]) :is(.card, .list, .banner) {
+  border: 1px solid var(--glow-edge);
+  box-shadow: 0 0 var(--glow-r) -6px var(--glow-soft), inset 0 1px 0 rgba(255,255,255,.05);
+}
+/* Hero: big halo + slow light sweep */
+:root:not([data-glow="off"]) .hero {
+  box-shadow: 0 0 calc(var(--glow-r) * 2) -2px var(--glow), 0 14px 40px -12px var(--g2);
+  background:
+    linear-gradient(105deg, transparent 35%, rgba(255,255,255,.22) 50%, transparent 65%) 0 0 / 300% 100% no-repeat,
+    linear-gradient(135deg, var(--g1), var(--g2));
+  animation: sheen 7s ease-in-out infinite;
+}
+@keyframes sheen { 0%, 55% { background-position: 120% 0, 0 0; } 100% { background-position: -20% 0, 0 0; } }
+:root:not([data-glow="off"]) .hero .ring .prog { filter: drop-shadow(0 0 5px rgba(255,255,255,.95)) drop-shadow(0 0 14px rgba(255,255,255,.55)); }
+:root:not([data-glow="off"]) .hero .ring .over { filter: drop-shadow(0 0 8px #fde68a); }
+:root:not([data-glow="off"]) .hero .ring-center .big { text-shadow: 0 0 18px rgba(255,255,255,.75), 0 0 2px rgba(255,255,255,.9); }
+:root:not([data-glow="off"]) .ring .prog { filter: drop-shadow(0 0 6px var(--glow)); }
+
+/* Macro bars: glowing fill, pulse when the goal is hit */
+:root:not([data-glow="off"]) .bar { overflow: visible; }
+:root:not([data-glow="off"]) .bar > i { box-shadow: 0 0 10px 0 color-mix(in srgb, var(--bc, var(--accent)) 75%, transparent), 0 0 2px var(--bc, var(--accent)); }
+:root:not([data-glow="off"]) .bar.hit > i { animation: barPulse 2.4s ease-in-out infinite; }
+@keyframes barPulse { 50% { box-shadow: 0 0 20px 3px color-mix(in srgb, var(--bc, var(--accent)) 85%, transparent), 0 0 2px var(--bc, var(--accent)); } }
+
+/* Water, buttons, tab bar */
+:root:not([data-glow="off"]) .cup.full { box-shadow: 0 0 10px color-mix(in srgb, var(--water) 80%, transparent); }
+:root:not([data-glow="off"]) .btn:not(.secondary):not(.danger) { box-shadow: 0 6px var(--glow-r) -4px var(--glow); }
+:root:not([data-glow="off"]) .btn.secondary { border: 1px solid var(--glow-edge); }
+:root:not([data-glow="off"]) .meal-add, :root:not([data-glow="off"]) .icon-q { box-shadow: 0 0 0 1px var(--glow-edge), 0 0 12px var(--glow-soft); }
+:root:not([data-glow="off"]) .add-tab .plus { animation: breathe 3.2s ease-in-out infinite; }
+@keyframes breathe { 50% { box-shadow: 0 0 calc(var(--glow-r) + 6px) 2px var(--glow), 0 8px 20px color-mix(in srgb, var(--g2) 50%, transparent); } }
+:root:not([data-glow="off"]) .tab.active svg { filter: drop-shadow(0 0 6px var(--accent)); }
+:root:not([data-glow="off"]) .tab.active { text-shadow: 0 0 10px var(--glow); }
+:root:not([data-glow="off"]) .streak { box-shadow: 0 0 14px rgba(255,255,255,.35); }
+:root:not([data-glow="off"]) .coach-pop { box-shadow: 0 0 calc(var(--glow-r) * 1.5) -2px var(--glow), 0 10px 30px rgba(0,0,0,.25); border: 1px solid var(--glow-edge); }
+:root:not([data-glow="off"]) .coach-av { box-shadow: 0 0 16px var(--glow); }
+:root:not([data-glow="off"]) .chip.on, :root:not([data-glow="off"]) .seg button.on { box-shadow: 0 0 12px var(--glow-soft); }
+
+/* =========================================================
+   ⏰ Check-ins
+   ========================================================= */
+.checkins {
+  border-radius: var(--radius); padding: 12px 14px; margin-bottom: 12px;
+  background: color-mix(in srgb, var(--ci) 10%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--ci) 55%, transparent);
+  box-shadow: 0 0 18px -4px color-mix(in srgb, var(--ci) 55%, transparent);
+  animation: ciGlow 2.6s ease-in-out infinite;
+}
+@keyframes ciGlow { 50% { box-shadow: 0 0 30px 0 color-mix(in srgb, var(--ci) 70%, transparent); } }
+.ci-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.ci-edit { font-size: 13px; color: var(--ink-3); }
+.ci-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.ci-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 999px;
+  background: var(--surface); border: 1px solid color-mix(in srgb, var(--ci) 60%, transparent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--ci) 35%, transparent); font-size: 14px;
+}
+.ci-chip small { color: var(--ink-3); font-size: 12px; }
+.ci-chip:active { transform: scale(.97); }
+.coach-fact { display: block; margin-top: 4px; font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.coach-pop.is-checkin { border-color: color-mix(in srgb, var(--ci) 70%, transparent) !important; }
+.ci-list { display: grid; gap: 8px; }
+.ci-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--surface); border-radius: 14px; }
+.ci-txt { flex: 1; display: grid; }
+.ci-txt small { color: var(--ink-3); font-size: 12px; }
+.ci-time { width: 112px; flex: none; padding: 8px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); }
+
+@media (prefers-reduced-motion: reduce) {
+  body::before, .hero, .bar.hit > i, .add-tab .plus, .checkins { animation: none !important; }
 }

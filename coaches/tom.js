@@ -432,6 +432,16 @@ export const TOM = {
   ] },
 
   // ---------- Small talk & lore ----------
+  // ---------- Check-ins (draft: Settings → Check-ins; {meal}, {Meal}, {MEAL}, {time} fill in) ----------
+  checkin_meal: { any: [
+    "It's {time} and no {meal}?? Eat something. Something that ISN'T me. Log it.",
+    "{Meal} not logged. Hungry people make bad decisions. Bad decisions involve turkeys.",
+  ] },
+  checkin_weigh: { any: [
+    "Weigh-in day. Step on the scale. And please don't use the word 'plump.' Triggering.",
+    "Scale time. It's just a number. Trust me. They weigh me every November.",
+  ] },
+
   random_smalltalk: {
     any: [
       "Why does the vampire keep LOOKING at me? 'Merely observing.' STOP OBSERVING.",

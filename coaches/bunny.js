@@ -369,6 +369,16 @@ export const BUNNY = {
   ] },
 
   // ---------- Bunny lore ----------
+  // ---------- Check-ins (draft: Settings → Check-ins; {meal}, {Meal}, {MEAL}, {time} fill in) ----------
+  checkin_meal: { any: [
+    "Hey! It's {time}. No {meal}? Need fuel to move. Hop to it.",
+    "{Meal}? Not logged. Legs can't run on nothing. Eat. Log. Move.",
+  ] },
+  checkin_weigh: { any: [
+    "Weigh-in day! Quick step on the scale. Then go use those legs.",
+    "Scale time. Just data. Your body's for using, not just measuring.",
+  ] },
+
   random_smalltalk: {
     any: [
       "Crunchula needs more cardio. I said it. He took it personally. He takes everything personally.",

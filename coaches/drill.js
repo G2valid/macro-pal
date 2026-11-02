@@ -765,6 +765,16 @@ export const DRILL = {
   ] },
 
   // ---------- Random small talk & lore ----------
+  // ---------- Check-ins (draft: Settings → Check-ins; {meal}, {Meal}, {MEAL}, {time} fill in) ----------
+  checkin_meal: { any: [
+    "RECRUIT! IT IS {time}. WHERE IS {MEAL}? LOG IT. NOW.",
+    "{MEAL} REPORT IS OVERDUE. I DO NOT ACCEPT SILENCE. FEED YOURSELF AND LOG IT.",
+  ] },
+  checkin_weigh: { any: [
+    "WEIGH-IN DAY, RECRUIT. SCALE. NOW. IT'S DATA, NOT A COURT-MARTIAL.",
+    "YOU HAVE NOT WEIGHED IN. THAT IS AN OPEN ORDER. EXECUTE.",
+  ] },
+
   random_smalltalk: {
     any: [
       "I told the vampire to REPORT. He said he reports to no mortal. I said THAT WAS NOT A REQUEST. ...He reported.",

@@ -38,6 +38,11 @@ Coach IDs: bestie, dj, drill, surfer, cat, popstar, dad, turkey, santa, bunny, s
 | `food_first_log` | First food logged today | small |
 | `food_logged` | Any later food logged (repeats) | small |
 | `food_garlic` | A logged food mentions garlic (50% chance, once a day; Count Crunchula has lines, others say a normal food line) | small |
+| `checkin_breakfast` / `checkin_lunch` / `checkin_dinner` | Check-in time passed (Settings → Check-ins; defaults 10 am / 2 pm / 8 pm) and that meal isn't logged. One line key for all three: `checkin_meal`, with `{meal}`, `{Meal}`, `{MEAL}` and `{time}` placeholders | checkin |
+| `checkin_water` | Check-in time passed (default 2 pm) and under half the water goal. Uses `water_low_late` lines | checkin |
+| `checkin_protein` | Check-in time passed (default 5 pm) and under half the protein goal. Uses `protein_low_late` lines | checkin |
+| `checkin_move` | Check-in time passed (default 7 pm), no workout and under half the step goal. Uses `steps_low_late` lines | checkin |
+| `checkin_weigh` | Weigh-in day, check-in time passed (default 11 am), not weighed in. Own lines: `checkin_weigh` | checkin |
 | `calories_close` | Calories cross 85% of goal | small |
 | `calories_hit` | Calories land at 95–100% of goal | big |
 | `calories_over_small` | Calories go over goal, up to +10% | nudge |
@@ -83,3 +88,5 @@ Coach IDs: bestie, dj, drill, surfer, cat, popstar, dad, turkey, santa, bunny, s
 | `meal_plan_meal_logged` | A meal-plan meal logged (repeats) | small |
 | `grocery_list_finished` | Last grocery item checked off | small |
 | `random_smalltalk` | Sometimes on a later open of the day (about 1 in 4) | small |
+
+**Check-in type:** each check-in shows once a day; it isn't limited by the chatty setting or the 2-nudges cap; it outranks nudges and small talk. The check runs on open and every minute while the app is open. When several are due at once, one pop-up names them all ("⏰ Still to do: breakfast, lunch, water"). Overdue check-ins also glow on Today until done.

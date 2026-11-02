@@ -425,6 +425,16 @@ export const SANTA = {
   ] },
 
   // ---------- North Pole lore ----------
+  // ---------- Check-ins (draft: Settings → Check-ins; {meal}, {Meal}, {MEAL}, {time} fill in) ----------
+  checkin_meal: { any: [
+    "Ho ho... hold on. It's {time} and {meal} isn't logged. Even the elves get a meal break.",
+    "Mrs. Claus says skipping {meal} is not a strategy, my friend. Log it.",
+  ] },
+  checkin_weigh: { any: [
+    "Weigh-in day! I check my numbers every December. Brave soul. Hop on.",
+    "The scale awaits, my friend. It's information, not the Naughty List.",
+  ] },
+
   random_smalltalk: {
     any: [
       "Crunchula and I go way back. 'Still wearing the cape?' 'Still wearing the hat?' Fair. Ho ho ho.",

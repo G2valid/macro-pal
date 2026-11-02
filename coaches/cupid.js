@@ -392,6 +392,16 @@ export const CUPID = {
   ] },
 
   // ---------- Lore & gossip ----------
+  // ---------- Check-ins (draft: Settings → Check-ins; {meal}, {Meal}, {MEAL}, {time} fill in) ----------
+  checkin_meal: { any: [
+    "It's {time} and no {meal}. I've seen better commitment on a third date. Log it.",
+    "Love yourself enough to eat {meal}. And log it. That's the whole speech.",
+  ] },
+  checkin_weigh: { any: [
+    "Weigh-in day. Step on the scale. It's not a relationship. It doesn't get to define you.",
+    "Scale time. Quick and painless. Unlike most of my clients' love lives.",
+  ] },
+
   random_smalltalk: {
     any: [
       "Count Crunchula is terrified of my arrows because they're WOODEN. Best thing that's happened to me in centuries.",

@@ -671,6 +671,16 @@ export const DAD = {
   ] },
 
   // ---------- Random small talk & dad lore ----------
+  // ---------- Check-ins (draft: Settings → Check-ins; {meal}, {Meal}, {MEAL}, {time} fill in) ----------
+  checkin_meal: { any: [
+    "Hey sport, it's {time} and no {meal} logged. I'm not mad. I'm just... checking the log.",
+    "{Meal}? Not in the log. You know what they call a skipped meal? A missed steak. ...Go eat.",
+  ] },
+  checkin_weigh: { any: [
+    "Weigh-in day, champ. Hop on the scale. I'd make a joke but it might weigh on you.",
+    "Scale time. Same rules as the house: shoes off. Log the number.",
+  ] },
+
   random_smalltalk: {
     any: [
       "The vampire said he was an immortal creature of darkness. I said shoes off in the house. He took his shoes off.",

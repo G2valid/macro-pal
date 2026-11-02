@@ -812,6 +812,17 @@ export const BESTIE = {
   ] },
 
   // ---------- Random small talk ----------
+  // ---------- Check-ins (draft: Settings → Check-ins; {meal}, {Meal}, {MEAL}, {time} fill in) ----------
+  checkin_meal: { any: [
+    "Bestie. It's {time} and {meal} isn't logged. Did you eat?? Tell me EVERYTHING.",
+    "Hold on. No {meal}?? We don't skip the log, we SERVE the log. Go!",
+    "Quick check-in, icon: {meal}. Logged? No? Fix it and come back gorgeous.",
+  ] },
+  checkin_weigh: { any: [
+    "Weigh-in day, bestie! Hop on the scale. It's data, not a verdict.",
+    "Scale. You. Now. Then we move on with our fabulous day. 💅",
+  ] },
+
   random_smalltalk: {
     any: [
       "Count Crunchula is GOTH DADDY and I will not be taking questions.",

@@ -708,6 +708,16 @@ export const WHISKERS = {
   ] },
 
   // ---------- Random small talk, lore & coaching ----------
+  // ---------- Check-ins (draft: Settings → Check-ins; {meal}, {Meal}, {MEAL}, {time} fill in) ----------
+  checkin_meal: { any: [
+    "It is {time}. The human has not recorded {meal}. I have already eaten twice. Explain yourself.",
+    "No {meal} logged. Unacceptable. Even I am fed on schedule. Usually by screaming.",
+  ] },
+  checkin_weigh: { any: [
+    "It is weigh-in day. Step upon the device. I will observe. Judgmentally.",
+    "The scale awaits, human. I sat on it earlier. It said 'magnificent.' Your turn.",
+  ] },
+
   random_smalltalk: {
     any: [
       "The pale one talks too much.",

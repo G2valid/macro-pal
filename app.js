@@ -1,8 +1,8 @@
 import { estimateFood, readFitnessScreens, suggestMeals, reviewEating, suggestExampleDay, readLabel, generatePlan, prepareImage, MODELS, DEFAULT_MODEL } from "./ai.js?v=10";
 import { buildPlanPrompt, parsePlanReply, normalizePlan, groceryList, groceryText, fmtQty } from "./planner.js?v=1";
 import { buildExampleDay, mealBudgets, MEAL_PATTERNS } from "./mealplan.js?v=2";
-import { COACHES, DEFAULT_COACH, seasonalCoach, coachLine, guestChance, phaseLine, inSeason } from "./coaches.js?v=15";
-import { TRIGGER_META, LINE_ID, FALLBACK, T } from "./triggers.js?v=5";
+import { COACHES, DEFAULT_COACH, seasonalCoach, coachLine, guestChance, phaseLine, inSeason } from "./coaches.js?v=16";
+import { TRIGGER_META, LINE_ID, FALLBACK, T } from "./triggers.js?v=6";
 
 /* =========================================================
    Storage
@@ -179,6 +179,7 @@ function applyTheme() {
   const p = P();
   const root = document.documentElement;
   root.dataset.accent = p?.accent || "ocean";
+  root.dataset.glow = p?.glow || "on";
   const mode = p?.mode || "auto";
   if (mode === "auto") delete root.dataset.theme;
   else root.dataset.theme = mode;
@@ -273,10 +274,11 @@ function renderToday() {
   const macro = (emo, name, val, goal, color) => {
     const w = Math.min(100, (val / goal) * 100);
     const left = goal - val;
+    const hit = val >= goal * 0.95;
     return `<div class="macro-row">
       <div class="top"><span class="name"><span class="emo">${emo}</span>${name}</span>
       <span class="num"><b>${r0(val)}</b> / ${goal} g</span></div>
-      <div class="bar" role="progressbar" aria-label="${name}" aria-valuenow="${r0(val)}" aria-valuemax="${goal}"><i style="width:${w}%;background:var(--${color})"></i></div>
+      <div class="bar ${hit ? "hit" : ""}" role="progressbar" aria-label="${name}" aria-valuenow="${r0(val)}" aria-valuemax="${goal}"><i style="width:${w}%;--bc:var(--${color});background:var(--bc)"></i></div>
       <div class="left">${left > 0 ? `${r0(left)} g left` : left === 0 || r0(left) === 0 ? "Goal hit! 🎉" : `${r0(-left)} g over`}</div>
     </div>`;
   };
@@ -328,6 +330,7 @@ function renderToday() {
       <input id="quickLogText" class="input" enterkeyhint="send" autocomplete="off" placeholder="✍️ Type or 🎤 say what you ate">
       <button class="quicklog-go" aria-label="Log it">➜</button>
     </form>` : ""}
+    ${isToday ? checkinStrip() : ""}
     ${needsWeigh ? `<button class="banner pop" data-act="log-weight"><span class="big-emo">⚖️</span><div><b>It's weigh-in day!</b><span>Log your weekly number to track real progress.</span></div></button>` : ""}
     <div class="card macros">
       <div class="card-head" style="margin-bottom:0"><h2>Macros</h2><button class="icon-q" data-act="edit-macros" aria-label="What are macros?">?</button></div>
@@ -613,6 +616,7 @@ function renderSettings() {
     <div class="section-label">Coach</div>
     <div class="list">
       <button data-act="coach-open"><span>${(COACHES[coachCfg().id] || COACHES[DEFAULT_COACH]).emoji} ${esc((COACHES[coachCfg().id] || COACHES[DEFAULT_COACH]).name)}</span><span class="v">${{ off: "Off", chill: "Chill", normal: "Normal", chatty: "Chatty" }[coachCfg().freq]} ›</span></button>
+      <button data-act="checkins-open"><span>⏰ Check-ins</span><span class="v">${Object.keys(CHECKS).filter((k) => checkinCfg()[k].on).length} on ›</span></button>
     </div>
 
     <div class="section-label">Theme</div>
@@ -620,6 +624,8 @@ function renderSettings() {
       <div class="swatches">${Object.entries(THEMES).map(([k, t]) => `<button class="swatch ${p.accent === k ? "on" : ""}" data-act="accent" data-v="${k}"><i style="background:linear-gradient(135deg, ${t.g[0]}, ${t.g[1]})"></i>${t.label}</button>`).join("")}</div>
       <div class="seg" style="margin:14px 0 0">${["auto", "light", "dark"].map((m) => `<button class="${(p.mode || "auto") === m ? "on" : ""}" data-act="mode" data-v="${m}">${m === "auto" ? "Match phone" : m[0].toUpperCase() + m.slice(1)}</button>`).join("")}</div>
       ${p.accent === "midnight" ? `<p class="hint" style="margin:8px 0 0">Midnight is always dark.</p>` : ""}
+      <div style="font-weight:600;margin:14px 2px 8px">✨ Glow</div>
+      <div class="seg" style="margin:0">${[["off", "Off"], ["on", "Glow"], ["neon", "Neon"]].map(([k, l]) => `<button class="${(p.glow || "on") === k ? "on" : ""}" data-act="glow" data-v="${k}">${l}</button>`).join("")}</div>
     </div>
 
     <div class="section-label">Claude (photos & screenshots)</div>
@@ -2566,6 +2572,7 @@ function coachAllowed(id, log, cfg) {
   if (!REPEATABLE.has(id) && log.fired[id]) return false;
   if (meta.type === "small") return log.small < COACH_FREQ[cfg.freq] && Date.now() - log.last > 90e3;
   if (meta.type === "nudge") return log.nudges < T.nudgesPerDay;
+  if (meta.type === "checkin") return true; // once a day each (the user asked for these)
   return true; // big & huge always
 }
 
@@ -2581,7 +2588,7 @@ function coachSay(id, { force = false } = {}) {
   if (guest && guest !== who && Math.random() < guestChance(guest)) who = guest;
   const chain = [LINE_ID[id] || id];
   while (FALLBACK[chain[chain.length - 1]] && chain.length < 4) chain.push(FALLBACK[chain[chain.length - 1]]);
-  const text = (!force && phaseLine(who, chain[0], new Date(), { status: cfg.valentine })) || coachLine(who, chain, { goal: computeTargets().direction, vars: coachVars() });
+  const text = (!force && phaseLine(who, chain[0], new Date(), { status: cfg.valentine })) || coachLine(who, chain, { goal: computeTargets().direction, vars: { ...coachVars(), ...checkinVars(id) } });
   if (!text) return false;
   const type = TRIGGER_META[id]?.type;
   if (!force) {
@@ -2590,17 +2597,18 @@ function coachSay(id, { force = false } = {}) {
     if (type === "nudge") log.nudges++;
   }
   save();
-  showCoach(who, text, guest === who && cfg.id !== who, id);
+  showCoach(who, text, guest === who && cfg.id !== who, id, id.startsWith("checkin_") ? checkinFact : "");
   if (type === "huge" || id === "protein_hit" || id === "workout_pr") confetti();
   return true;
 }
 
 let coachTimer;
-function showCoach(id, text, isGuest, trigger = "") {
+function showCoach(id, text, isGuest, trigger = "", fact = "") {
   const c = COACHES[id];
   const el = $("#coachPop");
   el.dataset.trigger = trigger;
-  el.innerHTML = `<span class="coach-av">${c.emoji}</span><div class="coach-txt"><b>${esc(c.name)}${isGuest ? ` <span class="coach-guest">Guest</span>` : ""}</b><span>${esc(text)}</span></div>`;
+  el.innerHTML = `<span class="coach-av">${c.emoji}</span><div class="coach-txt"><b>${esc(c.name)}${isGuest ? ` <span class="coach-guest">Guest</span>` : ""}</b><span>${esc(text)}</span>${fact ? `<small class="coach-fact">${esc(fact)}</small>` : ""}</div>`;
+  el.classList.toggle("is-checkin", !!fact);
   el.hidden = false;
   el.classList.remove("coach-in"); void el.offsetWidth; el.classList.add("coach-in");
   clearTimeout(coachTimer);
@@ -2668,6 +2676,93 @@ function streakEndingOn(date) {
 }
 const recentlyUsed = (fn) => Array.from({ length: 7 }, (_, i) => dayData(addDays(today(), -1 - i))).some(fn);
 
+/* ---- Check-ins: "if I haven't done X by this time, call it out" ---- */
+const CHECKS = {
+  breakfast: { emo: "🍳", label: "Breakfast", def: "10:00", meal: "Breakfast", word: "breakfast", desc: "Breakfast logged", todo: "breakfast isn't logged yet", done: (d) => d.entries.some((e) => e.meal === "Breakfast") },
+  lunch: { emo: "🥗", label: "Lunch", def: "14:00", meal: "Lunch", word: "lunch", desc: "Lunch logged", todo: "lunch isn't logged yet", done: (d) => d.entries.some((e) => e.meal === "Lunch") },
+  dinner: { emo: "🍽️", label: "Dinner", def: "20:00", meal: "Dinner", word: "dinner", desc: "Dinner logged", todo: "dinner isn't logged yet", done: (d) => d.entries.some((e) => e.meal === "Dinner") },
+  water: { emo: "💧", label: "Water", def: "14:00", desc: "Half my water", todo: "you're under half your water", done: (d, p) => (d.water || 0) >= (p.waterGoal || 8) / 2 },
+  protein: { emo: "🥩", label: "Protein", def: "17:00", desc: "Half my protein", todo: "you're under half your protein", done: (d) => totals(d.entries).p >= dayGoal(today()).protein / 2 },
+  move: { emo: "👟", label: "Move", def: "19:00", desc: "A workout or half my steps", todo: "no workout or steps yet", done: (d, p) => (d.workouts || []).length > 0 || (d.activity?.steps || 0) >= (p.stepGoal || 8000) / 2 },
+  weigh: { emo: "⚖️", label: "Weigh-in", def: "11:00", desc: "Weekly weigh-in (weigh-in day only)", todo: "it's weigh-in day and you haven't weighed in", done: (d, p) => new Date().getDay() !== (p.weighDay ?? 1) || (p.weights || []).some((w) => w.date === today()) },
+};
+function checkinCfg() {
+  const c = (P().checkins ||= {});
+  for (const [k, v] of Object.entries(CHECKS)) c[k] = { on: true, time: v.def, ...c[k] };
+  return c;
+}
+const fmtClock = (hm) => { const [h, m] = hm.split(":").map(Number); return new Date(2000, 0, 1, h, m).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }); };
+/** Check-ins whose time has passed today and that still aren't done. */
+function dueCheckins() {
+  const p = P();
+  if (!p) return [];
+  const cfg = checkinCfg();
+  const now = new Date();
+  const mins = now.getHours() * 60 + now.getMinutes();
+  const d = dayData(today());
+  return Object.entries(CHECKS).filter(([k, c]) => {
+    if (!cfg[k].on) return false;
+    const [h, m] = cfg[k].time.split(":").map(Number);
+    return mins >= h * 60 + m && !c.done(d, p);
+  }).map(([k]) => k);
+}
+let checkinFact = "", checkinNow = [];
+function checkinVars(id) {
+  const k = id.startsWith("checkin_") ? id.slice(8) : null;
+  if (!k || !CHECKS[k]) return {};
+  const w = CHECKS[k].word || CHECKS[k].label.toLowerCase();
+  return { meal: w, MEAL: w.toUpperCase(), Meal: w[0].toUpperCase() + w.slice(1), time: fmtClock(checkinCfg()[k].time) };
+}
+/** Due check-ins the coach hasn't called out today (also sets the "still to do" line under the pop-up). */
+function newCheckinIds() {
+  const due = dueCheckins();
+  checkinNow = due;
+  const log = coachToday();
+  const fresh = due.filter((k) => !log.fired["checkin_" + k]);
+  if (!fresh.length) return [];
+  const cfg = checkinCfg();
+  checkinFact = due.length > 1
+    ? `⏰ Still to do: ${due.map((k) => CHECKS[k].label.toLowerCase()).join(", ")}`
+    : `⏰ ${fmtClock(cfg[due[0]].time)} · ${CHECKS[due[0]].todo}`;
+  return fresh.map((k) => "checkin_" + k);
+}
+function checkinStrip() {
+  const due = dueCheckins().filter((k) => k !== "weigh"); // weigh-in day has its own banner
+  if (!due.length) return "";
+  const cfg = checkinCfg();
+  return `<div class="checkins">
+    <div class="ci-head"><b>⏰ Still to do</b><button class="ci-edit" data-act="checkins-open">Edit</button></div>
+    <div class="ci-chips">${due.map((k) => `<button class="ci-chip" data-act="checkin-go" data-k="${k}"><span>${CHECKS[k].emo}</span><b>${CHECKS[k].label}</b><small>by ${fmtClock(cfg[k].time)}</small></button>`).join("")}</div>
+  </div>`;
+}
+// While the app is open, check every minute so a passing deadline gets called out right away.
+let checkinSig = "";
+function checkinTick() {
+  if (document.visibilityState !== "visible" || !P()) return;
+  const ids = newCheckinIds();
+  if (ids.length) coachFire(ids);
+  const sig = checkinNow.join();
+  if (sig !== checkinSig) {
+    const typing = document.activeElement?.matches?.("input, textarea, select");
+    if (checkinSig !== "" || sig) { if (tab === "today" && currentDay === today() && $("#sheet").hidden && !typing) render(); }
+    checkinSig = sig;
+  }
+}
+setInterval(checkinTick, 60e3);
+
+function openCheckins() {
+  const cfg = checkinCfg();
+  openSheet(`${sheetTitle("⏰ Check-ins")}
+    <p class="small muted" style="margin-top:0">If something isn't done by its time, your coach calls it out (once a day) and it glows on Today until it's done. Works whenever the app is open.</p>
+    <div class="ci-list">${Object.entries(CHECKS).map(([k, c]) => `<label class="ci-row">
+      <input type="checkbox" data-ck="${k}" ${cfg[k].on ? "checked" : ""}>
+      <span class="ci-txt"><b>${c.emo} ${c.label}</b><small>${c.desc} by</small></span>
+      <input type="time" class="input ci-time" data-ct="${k}" value="${cfg[k].time}">
+    </label>`).join("")}</div>`, () => render());
+  $("#sheetBody").querySelectorAll("[data-ck]").forEach((el) => el.addEventListener("change", () => { checkinCfg()[el.dataset.ck].on = el.checked; save(); }));
+  $("#sheetBody").querySelectorAll("[data-ct]").forEach((el) => el.addEventListener("change", () => { if (el.value) { checkinCfg()[el.dataset.ct].time = el.value; save(); } }));
+}
+
 /** Checks that run whenever the app is opened. */
 function coachOnOpen() {
   const p = P();
@@ -2722,6 +2817,7 @@ function coachOnOpen() {
     if ((day.water || 0) < wg * 0.5 && recentlyUsed((d) => d.water > 0)) out.push("water_low_late");
   }
   if (!firstOpen && Math.random() < 0.25) out.push("random_smalltalk");
+  out.push(...newCheckinIds());
   save();
   for (const id of out) coachPending.add(id);
   clearTimeout(coachPendingTimer);
@@ -3003,6 +3099,21 @@ document.addEventListener("click", (ev) => {
     case "clear-key": state.apiKey = ""; save(); closeSheet(); render(); toast("Key removed"); break;
     case "accent": p.accent = v; save(); render(); break;
     case "mode": p.mode = v; save(); render(); break;
+    case "glow": p.glow = v; save(); render(); break;
+    case "checkins-open": openCheckins(); break;
+    case "checkin-go": {
+      const k = t.dataset.k;
+      if (k === "water") {
+        currentDay = today();
+        const day = ensureDay(), was = day.water || 0, wg = p.waterGoal || 8;
+        day.water = was + 1; save(); render(); toast("💧 +1 cup");
+        coachFire(crossed(was / wg, day.water / wg, [[T.half, "water_halfway"], [T.close, "water_close"], [1, "water_hit"]]));
+      }
+      else if (k === "move") { tab = "fitness"; render(); openFitnessAdd(); }
+      else if (k === "weigh") openWeightSheet();
+      else { lbl = null; openAdd(CHECKS[k].meal || null); }
+      break;
+    }
     case "switch": state.activeId = t.dataset.id; save(); closeSheet(); currentDay = today(); render(); toast(`Hi, ${P().name}!`); break;
     case "new-profile": closeSheet(); openNewProfile(null); break;
     case "export": exportData(); break;

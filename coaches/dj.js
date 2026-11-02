@@ -705,6 +705,16 @@ export const DJ = {
   ] },
 
   // ---------- Random small talk ----------
+  // ---------- Check-ins (draft: Settings → Check-ins; {meal}, {Meal}, {MEAL}, {time} fill in) ----------
+  checkin_meal: { any: [
+    "Yo! {time} and no {meal} on the decks. Drop that track in the log! 🎧",
+    "Record scratch. Where's {meal}? Log it and we keep the set going.",
+  ] },
+  checkin_weigh: { any: [
+    "Weigh-in day! Quick soundcheck on the scale. Then back to the mix.",
+    "It's weigh-in day. Step up to the scale like it's the booth. Log the number. 🎚️",
+  ] },
+
   random_smalltalk: {
     any: [
       "Played 'Bela Lugosi's Dead' for the Count. He stared at me for nine minutes. I stared back. Respect. 🦇",

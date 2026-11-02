@@ -743,6 +743,16 @@ export const SURFER = {
   ] },
 
   // ---------- Random small talk & lore ----------
+  // ---------- Check-ins (draft: Settings → Check-ins; {meal}, {Meal}, {MEAL}, {time} fill in) ----------
+  checkin_meal: { any: [
+    "Duuude. It's {time} and no {meal}? Gotta fuel up before the next set, bro.",
+    "Gnarly reminder: {meal}'s not logged. Grab some grub, log it, ride on. 🤙",
+  ] },
+  checkin_weigh: { any: [
+    "Weigh-in day, dude. Quick hop on the scale. Just checkin' the tide.",
+    "Scale time, bro. No stress. Numbers come and go like waves. 🌊",
+  ] },
+
   random_smalltalk: {
     any: [
       "Invited the Count to a sunrise surf. He asked if I wanted him DEAD. My bad, dude. Sunset session went... the cape did not go well.",

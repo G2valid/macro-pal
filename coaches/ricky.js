@@ -693,6 +693,16 @@ export const RICKY = {
   ] },
 
   // ---------- Random small talk & lore ----------
+  // ---------- Check-ins (draft: Settings → Check-ins; {meal}, {Meal}, {MEAL}, {time} fill in) ----------
+  checkin_meal: { any: [
+    "Yo! {time} and no {meal}? Back in '94 I never missed catering. LOG IT, baby!",
+    "Ricky here. {Meal} still not logged. That's like skipping the chorus. Can't do it. 🛼",
+  ] },
+  checkin_weigh: { any: [
+    "Weigh-in day! Step on that scale like it's the big stage. Big energy.",
+    "Scale check! I weighed in before every tour. Probably. Log it, superstar!",
+  ] },
+
   random_smalltalk: {
     any: [
       "Count Crunchula came to my '94 show. HE ADMITTED IT. He left after eleven minutes but that's basically a standing ovation for him.",

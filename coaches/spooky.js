@@ -345,6 +345,16 @@ export const CRUNCHULA = {
   ] },
 
   // ---------- Crunchula lore ----------
+  // ---------- Check-ins (draft: Settings → Check-ins; {meal}, {Meal}, {MEAL}, {time} fill in) ----------
+  checkin_meal: { any: [
+    "Mortal. It is {time}. Thy {meal} remains unrecorded. I cannot coach shadows.",
+    "No {meal}? Muscle does not materialize from darkness. Feed thyself. Log it.",
+  ] },
+  checkin_weigh: { any: [
+    "Weigh-in day, mortal. Approach the scale. It provides information. Not judgment.",
+    "The scale awaits. I would join thee, but I would not appear on it. Long story.",
+  ] },
+
   random_smalltalk: {
     any: [
       "Mortal. I have a question. What is a 'gym bro'? ... Ah. Apparently I am one. Disturbing.",

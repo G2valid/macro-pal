@@ -1,5 +1,5 @@
 // Master trigger list for coach pop-ups.
-// type: small (follows the chatty setting) · nudge (max 2/day) · big (always) · huge (always + confetti)
+// type: small (follows the chatty setting) · nudge (max 2/day) · checkin (your timed check-ins, once a day each) · big (always) · huge (always + confetti)
 // Order matters: when several fire together, the higher type wins, then the earlier one in this list.
 
 export const TRIGGERS = [
@@ -30,6 +30,14 @@ export const TRIGGERS = [
   ["water_hit", "big"],
   ["streak_comeback", "big"],
   ["day_under_calories_positive", "big"],
+  // Check-ins (Settings → Check-ins: "if I haven't done X by this time, call it out")
+  ["checkin_weigh", "checkin"],
+  ["checkin_breakfast", "checkin"],
+  ["checkin_lunch", "checkin"],
+  ["checkin_dinner", "checkin"],
+  ["checkin_protein", "checkin"],
+  ["checkin_water", "checkin"],
+  ["checkin_move", "checkin"],
   // Nudges
   ["calories_over_large", "nudge"],
   ["calories_over_small", "nudge"],
@@ -70,18 +78,19 @@ export const TRIGGERS = [
   ["random_smalltalk", "small"],
 ];
 
-const TYPE_RANK = { huge: 4, big: 3, nudge: 2, small: 1 };
+const TYPE_RANK = { huge: 4, big: 3, checkin: 2.5, nudge: 2, small: 1 };
 export const TRIGGER_META = Object.fromEntries(
   TRIGGERS.map(([id, type], i) => [id, { type, rank: TYPE_RANK[type] * 1000 - i }])
 );
 
 // day_under_calories is one trigger for the line writers; its type depends on the goal.
-export const LINE_ID = { day_under_calories_positive: "day_under_calories", day_under_calories_nudge: "day_under_calories", day_under_calories_small: "day_under_calories" };
+export const LINE_ID = { checkin_breakfast: "checkin_meal", checkin_lunch: "checkin_meal", checkin_dinner: "checkin_meal", day_under_calories_positive: "day_under_calories", day_under_calories_nudge: "day_under_calories", day_under_calories_small: "day_under_calories" };
 // day_under_calories_way and calories_low_late have their own lines (and fall back to the ones above).
 
 // Until a coach has lines for a trigger, borrow its closest line (followed as a chain).
 export const FALLBACK = {
   day_under_calories_way: "day_under_calories", calories_low_late: "missed", food_turkey: "food_logged", food_garlic: "food_logged",
+  checkin_meal: "nothing_logged_afternoon", checkin_water: "water_low_late", checkin_protein: "protein_low_late", checkin_move: "steps_low_late", checkin_weigh: "app_open_morning",
   coach_picked_offseason: "coach_picked", coach_picked: "app_open_morning",
   app_open_morning: "morning", app_open_afternoon: "afternoon", app_open_evening: "evening", app_open_late: "evening",
   monday_open: "morning", friday_open: "afternoon", weekend_open: "morning",

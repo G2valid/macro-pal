@@ -14,18 +14,18 @@
 //   streak      logging streak milestone      water     water goal reached
 //   tip         random tip
 
-import { WHISKERS } from "./coaches/whiskers.js?v=4";
-import { BESTIE } from "./coaches/bestie.js?v=4";
-import { DJ } from "./coaches/dj.js?v=4";
-import { DRILL } from "./coaches/drill.js?v=4";
-import { SURFER } from "./coaches/surfer.js?v=3";
-import { RICKY } from "./coaches/ricky.js?v=4";
-import { DAD } from "./coaches/dad.js?v=4";
-import { TOM, TOM_PHASES, tomPhase } from "./coaches/tom.js?v=5";
-import { SANTA, SANTA_PHASES, santaPhase } from "./coaches/santa.js?v=4";
-import { CUPID, CUPID_PHASES, VDAY_STATUS, cupidPhase } from "./coaches/cupid.js?v=3";
-import { CRUNCHULA, CRUNCHULA_PHASES, crunchulaPhase } from "./coaches/spooky.js?v=1";
-import { BUNNY, BUNNY_PHASES, bunnyPhase } from "./coaches/bunny.js?v=3";
+import { WHISKERS } from "./coaches/whiskers.js?v=5";
+import { BESTIE } from "./coaches/bestie.js?v=5";
+import { DJ } from "./coaches/dj.js?v=5";
+import { DRILL } from "./coaches/drill.js?v=5";
+import { SURFER } from "./coaches/surfer.js?v=4";
+import { RICKY } from "./coaches/ricky.js?v=5";
+import { DAD } from "./coaches/dad.js?v=5";
+import { TOM, TOM_PHASES, tomPhase } from "./coaches/tom.js?v=6";
+import { SANTA, SANTA_PHASES, santaPhase } from "./coaches/santa.js?v=5";
+import { CUPID, CUPID_PHASES, VDAY_STATUS, cupidPhase } from "./coaches/cupid.js?v=4";
+import { CRUNCHULA, CRUNCHULA_PHASES, crunchulaPhase } from "./coaches/spooky.js?v=2";
+import { BUNNY, BUNNY_PHASES, bunnyPhase } from "./coaches/bunny.js?v=4";
 
 export const COACHES = {
   bestie: {
