@@ -1,4 +1,4 @@
-import { estimateFood, readFitnessScreens, suggestMeals, reviewEating, suggestExampleDay, readLabel, generatePlan, prepareImage, MODELS, DEFAULT_MODEL } from "./ai.js?v=10";
+import { estimateFood, readFitnessScreens, suggestMeals, reviewEating, suggestExampleDay, readLabel, generatePlan, prepareImage, MODELS, DEFAULT_MODEL } from "./ai.js?v=11";
 import { buildPlanPrompt, parsePlanReply, normalizePlan, groceryList, groceryText, fmtQty } from "./planner.js?v=1";
 import { buildExampleDay, mealBudgets, MEAL_PATTERNS } from "./mealplan.js?v=2";
 import { COACHES, DEFAULT_COACH, seasonalCoach, coachLine, guestChance, phaseLine, inSeason } from "./coaches.js?v=16";
@@ -817,7 +817,8 @@ let addState = null;
 
 function openAdd(meal, text = "") {
   addState = { meal: meal || defaultMeal(), mode: state.apiKey ? "type" : "foods", q: "" };
-  photo = { image: null, est: null, answers: {}, desc: text };
+  photo = { images: [], est: null, answers: {}, desc: text };
+  lbl = null;
   renderAdd();
   if (text && state.apiKey) runEstimate(false);
   else setTimeout(() => $("#photoDesc")?.focus(), 250);
@@ -839,10 +840,12 @@ function renderAdd() {
     ${mealPicker()}
     <div class="chips" style="margin-bottom:14px">${modes.map(([k, l]) => `<button class="chip ${addState.mode === k ? "on" : ""}" data-act="add-mode" data-v="${k}">${l}</button>`).join("")}</div>
     <div id="addBody">${body}</div>`;
+  const focusKey = document.activeElement?.dataset?.fk;
   if ($("#sheet").hidden) openSheet(html, () => (addState = null));
   else $("#sheetBody").innerHTML = html;
   if (addState.mode === "foods") bindFoodSearch();
   if (addState.mode === "label") bindLabel();
+  if (focusKey) $(`[data-fk="${focusKey}"]`)?.focus({ preventScroll: true });
   if (addState.mode === "type") {
     $("#photoDesc")?.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); runEstimate(false); }
@@ -936,7 +939,7 @@ function typeBody() {
   if (!state.apiKey) {
     return `<div class="note">Typing or saying what you ate uses Claude. Add your Anthropic API key once in <b>Settings → API key</b>.</div><button class="btn" data-act="edit-ai">Set up Claude</button>`;
   }
-  if (!photo) photo = { image: null, est: null, answers: {}, desc: "" };
+  if (!photo) photo = { images: [], est: null, answers: {}, desc: "" };
   if (photo.loading || photo.est) return photoBody();
   return `<label class="field"><span>What did you eat?</span>
       <textarea id="photoDesc" rows="3" enterkeyhint="send" placeholder="e.g. 2 eggs, a slice of toast with butter and a black coffee">${esc(photo.desc)}</textarea></label>
@@ -951,8 +954,9 @@ function knownFoodsText() {
   return foods.map((f) => `- ${f.name}: ${f.kcal} kcal, P ${f.p} g, C ${f.c} g, F ${f.f} g per ${f.label?.servText || f.portion || "serving"}`).join("\n");
 }
 
-/* ---------- Nutrition label + scale ---------- */
-let lbl = null; // { image, loading, error, data, amount, unit, foodId }
+/* ---------- Nutrition labels + scale (several at once) ---------- */
+let lbl = null; // { items: [{ id, image, loading, error, data, amount, unit, foodId }], error }
+const MAX_LABELS = 8;
 
 function labelUnits(d) {
   const u = [];
@@ -967,100 +971,162 @@ function labelMath(d, amount, unit) {
   return { kcal: r0(d.kcal * factor), p: r1(d.p * factor), c: r1(d.c * factor), f: r1(d.f * factor) };
 }
 
-function labelBody() {
-  if (!lbl) lbl = { image: null, loading: false, error: null, data: null, amount: "", unit: "" };
-  if (lbl.loading) {
-    return `${lbl.image ? `<img class="photo-preview" src="${lbl.image.dataUrl}" alt="Label photo" style="max-height:200px;object-fit:contain">` : ""}<div class="empty"><div class="spinner"></div>Reading the label…</div>`;
+const lblItem = (fields = {}) => ({ id: uid(), image: null, loading: false, error: null, data: null, amount: "", unit: "", foodId: null, ...fields });
+const lblReady = () => (lbl?.items || []).filter((it) => it.data && !it.loading);
+
+function labelCard(it, i) {
+  const thumb = it.image ? `<img class="lbl-thumb" src="${it.image.dataUrl}" alt="Label ${i + 1}">` : `<span class="lbl-thumb lbl-thumb-emo">🏷️</span>`;
+  const rm = `<button class="rm" data-act="lbl-rm" data-i="${i}">Remove</button>`;
+  if (it.loading) {
+    return `<div class="ai-item lbl-card"><div class="lbl-row">${thumb}<div class="grow lbl-wait"><div class="spinner sm"></div><span class="small muted">Reading label ${i + 1}…</span></div></div></div>`;
   }
-  if (!lbl.data) {
+  if (!it.data) {
+    return `<div class="ai-item lbl-card"><div class="lbl-row">${thumb}<div class="grow">
+      <div class="note warn" style="margin:0 0 8px">${esc(it.error || "Couldn't read this label.")}</div>
+      <div class="lbl-actions">${it.image ? `<button class="chip" data-act="lbl-retry" data-i="${i}">Try again</button>` : ""}${rm}</div></div></div></div>`;
+  }
+  const d = it.data;
+  const units = labelUnits(d);
+  if (!units.includes(it.unit)) it.unit = units[0];
+  if (it.amount === "") it.amount = it.unit === "servings" ? 1 : it.unit === "oz" ? r1(d.servAmt / 28.3495) : d.servAmt;
+  const gfWarn = (P().diet || []).includes("Gluten-free") && /wheat|barley|rye|malt|gluten/i.test(d.allergens) && !/gluten[- ]free/i.test(d.allergens);
+  return `<div class="ai-item lbl-card">
+    <div class="lbl-row">${thumb}<div class="grow">
+      <div class="hdr"><input class="input" data-lk="name" data-i="${i}" data-fk="name-${it.id}" maxlength="60" value="${esc(d.name)}" aria-label="Food name">${rm}</div>
+      <div class="small muted">Per ${esc(d.servText || "1 serving")} · <span class="num">${d.kcal} kcal · <span style="color:var(--protein)">P ${d.p}</span> · <span style="color:var(--carbs)">C ${d.c}</span> · <span style="color:var(--fat)">F ${d.f}</span></span></div>
+      ${d.allergens ? `<div class="small muted" style="margin-top:2px">${esc(d.allergens)}</div>` : ""}
+    </div></div>
+    ${gfWarn ? `<div class="note warn" style="margin:8px 0 0">⚠️ This label lists a gluten source (${esc(d.allergens)}).</div>` : ""}
+    <div class="row2" style="align-items:end;margin-top:10px">
+      <label class="field" style="margin:0"><span>How much did you have?</span><input class="input num" data-lk="amt" data-i="${i}" data-fk="amt-${it.id}" type="number" inputmode="decimal" step="any" min="0" value="${it.amount}" style="font-size:20px;font-weight:700"></label>
+      <div class="seg" style="margin:0">${units.map((u) => `<button class="${it.unit === u ? "on" : ""}" data-act="lbl-unit" data-i="${i}" data-v="${u}">${u}</button>`).join("")}</div>
+    </div>
+    ${!d.servAmt ? `<p class="hint" style="margin:6px 0 0">No gram amount on this label, so enter servings.</p>` : ""}
+    <div class="lbl-sub num" data-lt="${i}"></div>
+  </div>`;
+}
+
+function labelBody() {
+  if (!lbl) lbl = { items: [] };
+  if (!lbl.items.length) {
     if (!state.apiKey) return `<div class="note">Reading labels uses Claude. Add your Anthropic API key once in <b>Settings → API key</b>.</div><button class="btn" data-act="edit-ai">Set up Claude</button>`;
-    return `<button class="photo-drop" data-act="pick-label"><span class="cam">🏷️</span><b>Snap the Nutrition Facts</b><span class="small">Lay it flat, fill the frame, avoid glare. Then enter what your scale says.</span></button>
+    return `<button class="photo-drop" data-act="pick-label"><span class="cam">🏷️</span><b>Snap or choose labels</b><span class="small">Several in one meal? Pick them all at once, one label per photo. Lay each flat, fill the frame, avoid glare.</span></button>
       ${lbl.error ? `<br><div class="note warn">${esc(lbl.error)}</div>` : ""}
       <p class="small muted" style="text-align:center;margin-top:10px">Labels you scan are saved to My foods, so next time you only type the weight.</p>`;
   }
-  const d = lbl.data;
-  const units = labelUnits(d);
-  if (!units.includes(lbl.unit)) lbl.unit = units[0];
-  if (lbl.amount === "") lbl.amount = lbl.unit === "servings" ? 1 : lbl.unit === "oz" ? r1(d.servAmt / 28.3495) : d.servAmt;
-  const gfWarn = (P().diet || []).includes("Gluten-free") && /wheat|barley|rye|malt|gluten/i.test(d.allergens) && !/gluten[- ]free/i.test(d.allergens);
-  return `${lbl.image ? `<img class="photo-preview" src="${lbl.image.dataUrl}" alt="Label photo" style="max-height:140px;object-fit:contain">` : ""}
-    <label class="field"><span>Food name</span><input id="lblName" class="input" maxlength="60" value="${esc(d.name)}"></label>
-    <div class="ai-item">
-      <div class="small muted" style="margin-bottom:4px">Per serving · ${esc(d.servText || "1 serving")}</div>
-      <div class="num"><b>${d.kcal} kcal</b> · <span style="color:var(--protein)">P ${d.p}</span> · <span style="color:var(--carbs)">C ${d.c}</span> · <span style="color:var(--fat)">F ${d.f}</span>${d.fiber ? ` <span class="muted small">· fiber ${d.fiber} g</span>` : ""}</div>
-      ${d.allergens ? `<div class="small muted" style="margin-top:4px">${esc(d.allergens)}</div>` : ""}
-    </div>
-    ${gfWarn ? `<div class="note warn">⚠️ This label lists a gluten source (${esc(d.allergens)}).</div>` : ""}
-    <div style="font-weight:600;margin:10px 2px 6px">How much did you have?</div>
-    <div class="row2" style="align-items:end">
-      <label class="field" style="margin:0"><span>Amount</span><input id="lblAmt" class="input num" type="number" inputmode="decimal" step="any" min="0" value="${lbl.amount}" style="font-size:22px;font-weight:700"></label>
-      <div class="seg" style="margin:0">${units.map((u) => `<button class="${lbl.unit === u ? "on" : ""}" data-act="lbl-unit" data-v="${u}">${u}</button>`).join("")}</div>
-    </div>
-    ${!d.servAmt ? `<p class="hint">This label has no gram amount, so enter servings.</p>` : ""}
-    <div class="ai-total num" id="lblTotal"></div>
-    <button class="btn" data-act="lbl-add">Add to ${addState.meal}</button>
-    ${lbl.foodId ? "" : `<button class="btn secondary" data-act="lbl-reset">Scan a different label</button>`}`;
+  const ready = lblReady();
+  const busy = lbl.items.some((it) => it.loading);
+  const n = ready.length;
+  return `${lbl.items.map(labelCard).join("")}
+    ${lbl.items.length < MAX_LABELS && state.apiKey ? `<button class="btn secondary" data-act="pick-label" style="margin-bottom:10px">＋ Add another label</button>` : ""}
+    ${n ? `<div class="ai-total num" id="lblTotal"></div>` : ""}
+    <button class="btn sticky-add" data-act="lbl-add" ${busy || !n ? "disabled" : ""}>${busy ? "Reading labels…" : `Add ${n > 1 ? `all ${n} ` : ""}to ${addState.meal}`}</button>`;
 }
 
 function bindLabel() {
-  const amt = $("#lblAmt");
-  if (!amt) return;
   const upd = () => {
-    lbl.amount = amt.value;
-    const t = labelMath(lbl.data, Number(amt.value) || 0, lbl.unit);
-    $("#lblTotal").innerHTML = `<span>You're logging</span><span>${t.kcal} kcal · P ${r0(t.p)} · C ${r0(t.c)} · F ${r0(t.f)}</span>`;
+    const ready = lblReady();
+    const sum = { kcal: 0, p: 0, c: 0, f: 0 };
+    ready.forEach((it) => {
+      const t = labelMath(it.data, Number(it.amount) || 0, it.unit);
+      for (const k in sum) sum[k] += t[k];
+      const el = document.querySelector(`[data-lt="${lbl.items.indexOf(it)}"]`);
+      if (el) el.textContent = `= ${t.kcal} kcal · P ${r0(t.p)} · C ${r0(t.c)} · F ${r0(t.f)}`;
+    });
+    const tot = $("#lblTotal");
+    if (tot) tot.innerHTML = `<span>${ready.length > 1 ? "Meal total" : "You're logging"}</span><span>${r0(sum.kcal)} kcal · P ${r0(sum.p)} · C ${r0(sum.c)} · F ${r0(sum.f)}</span>`;
   };
-  amt.addEventListener("input", upd);
-  $("#lblName")?.addEventListener("input", (e) => (lbl.data.name = e.target.value));
+  document.querySelectorAll("[data-lk]").forEach((inp) => inp.addEventListener("input", () => {
+    const it = lbl.items[Number(inp.dataset.i)];
+    if (!it?.data) return;
+    if (inp.dataset.lk === "amt") { it.amount = inp.value; upd(); } else it.data.name = inp.value;
+  }));
   upd();
 }
 
-async function runLabel(file) {
-  lbl = { image: null, loading: true, error: null, data: null, amount: "", unit: "" };
-  try {
-    lbl.image = await prepareImage(file);
-    renderAdd();
-    lbl.data = await readLabel({ apiKey: state.apiKey, model: state.model || DEFAULT_MODEL, image: lbl.image });
-  } catch (err) {
-    if (lbl) lbl.error = err.message;
-  }
-  if (!lbl) return;
-  lbl.loading = false;
-  if (addState) renderAdd();
+/** Run fn over items, at most n at a time. */
+async function pool(items, n, fn) {
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => {
+    while (next < items.length) await fn(items[next++]);
+  }));
 }
 
-function addFromLabel() {
-  const d = lbl.data;
-  const amount = Number(lbl.amount) || 0;
-  if (amount <= 0) return toast("Enter how much you had.");
-  const t = labelMath(d, amount, lbl.unit);
-  const name = (d.name || "Food").trim();
-  const portion = lbl.unit === "servings" ? `${amount} serving${amount === 1 ? "" : "s"}` : `${amount} ${lbl.unit}`;
+const labelChanged = (mine) => addState && lbl === mine && addState.mode === "label" && renderAdd();
+
+async function readOneLabel(it, mine) {
+  try {
+    it.data = await readLabel({ apiKey: state.apiKey, model: state.model || DEFAULT_MODEL, image: it.image });
+  } catch (err) {
+    it.error = err.message;
+  }
+  it.loading = false;
+  labelChanged(mine);
+}
+
+async function runLabels(files) {
+  if (!lbl) lbl = { items: [] };
+  lbl.error = null;
+  const room = MAX_LABELS - lbl.items.length;
+  if (files.length > room) toast(`Up to ${MAX_LABELS} labels at a time.`);
+  const batch = files.slice(0, Math.max(0, room)).map(() => lblItem({ loading: true }));
+  if (!batch.length) return;
+  const mine = lbl;
+  mine.items.push(...batch);
+  renderAdd();
+  // Shrink the photos first (quick, on the phone), then read up to 3 labels at once.
+  for (let i = 0; i < batch.length; i++) {
+    try { batch[i].image = await prepareImage(files[i]); } catch (err) { batch[i].error = err.message || "Couldn't open that photo."; batch[i].loading = false; }
+  }
+  labelChanged(mine);
+  await pool(batch.filter((it) => it.image), 3, (it) => readOneLabel(it, mine));
+}
+
+function addFromLabels() {
+  const ready = lblReady();
+  if (!ready.length) return;
+  if (ready.some((it) => !(Number(it.amount) > 0))) return toast("Enter how much you had of each.");
   const meal = addState.meal;
-  addEntry({ name, portion, kcal: t.kcal, p: r1(t.p), c: r1(t.c), f: r1(t.f), servings: 1 }, { saveFood: false });
-  // Remember the label (per serving) so next time only the weight is needed.
   const p = P();
   p.foods ||= [];
-  let f = (lbl.foodId && p.foods.find((x) => x.id === lbl.foodId)) || p.foods.find((x) => x.label && x.name.toLowerCase() === name.toLowerCase());
-  if (!f) { f = { id: uid(), uses: 0 }; p.foods.push(f); }
-  Object.assign(f, {
-    name, portion: d.servText || "1 serving", kcal: d.kcal, p: d.p, c: d.c, f: d.f, lastUsed: Date.now(),
-    label: { servText: d.servText, servAmt: d.servAmt, servUnit: d.servUnit, fiber: d.fiber, allergens: d.allergens, lastUnit: lbl.unit, lastAmount: amount },
-  });
-  f.uses = (f.uses || 0) + 1;
+  for (const it of ready) {
+    const d = it.data;
+    const amount = Number(it.amount);
+    const t = labelMath(d, amount, it.unit);
+    const name = (d.name || "Food").trim();
+    const portion = it.unit === "servings" ? `${amount} serving${amount === 1 ? "" : "s"}` : `${amount} ${it.unit}`;
+    addEntry({ name, portion, kcal: t.kcal, p: r1(t.p), c: r1(t.c), f: r1(t.f), servings: 1 }, { saveFood: false });
+    // Remember the label (per serving) so next time only the weight is needed.
+    let f = (it.foodId && p.foods.find((x) => x.id === it.foodId)) || p.foods.find((x) => x.label && x.name.toLowerCase() === name.toLowerCase());
+    if (!f) { f = { id: uid(), uses: 0 }; p.foods.push(f); }
+    Object.assign(f, {
+      name, portion: d.servText || "1 serving", kcal: d.kcal, p: d.p, c: d.c, f: d.f, lastUsed: Date.now(),
+      label: { servText: d.servText, servAmt: d.servAmt, servUnit: d.servUnit, fiber: d.fiber, allergens: d.allergens, lastUnit: it.unit, lastAmount: amount },
+    });
+    f.uses = (f.uses || 0) + 1;
+  }
   save();
+  const skipped = lbl.items.length - ready.length;
   lbl = null; photo = null;
-  closeSheet(); render(); toast(`Added to ${meal} 🏷️`);
+  closeSheet(); render();
+  toast(`${ready.length > 1 ? `Added ${ready.length} items` : "Added"} to ${meal} 🏷️${skipped ? ` · skipped ${skipped} unreadable` : ""}`);
 }
 
 $("#labelInput").addEventListener("change", (e) => {
-  const file = e.target.files[0];
+  const files = [...e.target.files];
   e.target.value = "";
-  if (file && addState) runLabel(file);
+  if (files.length && addState) runLabels(files);
 });
 
 /* ---------- Photo / Claude ---------- */
-let photo = null; // { file, image, est, answers, loading, error, desc }
+let photo = null; // { images, est, answers, loading, error, desc }
+const MAX_PHOTOS = 6;
+
+function photoThumbs(editable, small = false) {
+  const ims = photo.images;
+  return `<div class="thumbs ${small ? "small" : ""} ${ims.length === 1 && !small ? "one" : ""}">${ims.map((im, i) => `<div class="thumb"><img src="${im.dataUrl}" alt="Photo ${i + 1}">${editable ? `<button class="thumb-x" data-act="photo-rm" data-i="${i}" aria-label="Remove photo ${i + 1}">✕</button>` : ""}</div>`).join("")}${
+    editable && ims.length < MAX_PHOTOS ? `<button class="thumb thumb-add" data-act="pick-photo" aria-label="Add another photo"><span>＋</span><small>Add photo</small></button>` : ""}</div>`;
+}
 
 function photoBody() {
   if (!state.apiKey) {
@@ -1068,23 +1134,23 @@ function photoBody() {
       <button class="btn" data-act="edit-ai">Set up photo estimates</button>
       <p class="small muted" style="text-align:center;margin-top:10px">Or describe the meal in words after setup — no photo needed.</p>`;
   }
-  if (!photo) photo = { image: null, est: null, answers: {}, desc: "" };
+  if (!photo) photo = { images: [], est: null, answers: {}, desc: "" };
   if (photo.loading) {
-    return `${photo.image ? `<img class="photo-preview" src="${photo.image.dataUrl}" alt="Your photo">` : ""}
-      <div class="empty"><div class="spinner"></div>Claude is looking at your food…</div>`;
+    return `${photo.images.length ? photoThumbs(false) : ""}
+      <div class="empty"><div class="spinner"></div>Claude is looking at your ${photo.images.length > 1 ? `${photo.images.length} photos` : "food"}…</div>`;
   }
   if (!photo.est) {
-    return `${photo.image
-        ? `<img class="photo-preview" src="${photo.image.dataUrl}" alt="Your photo"><button class="btn secondary" data-act="pick-photo" style="margin-bottom:12px">Retake / choose another</button>`
-        : `<button class="photo-drop" data-act="pick-photo"><span class="cam">📷</span><b>Take or choose a photo</b><span class="small">Claude will estimate calories and macros</span></button><br>`}
+    return `${photo.images.length
+        ? photoThumbs(true)
+        : `<button class="photo-drop" data-act="pick-photo"><span class="cam">📷</span><b>Take or choose photos</b><span class="small">Several dishes or a drink too? Pick them all at once. Claude estimates the whole meal.</span></button><br>`}
       <label class="field"><span>Anything Claude should know? (optional)</span>
         <textarea id="photoDesc" rows="2" placeholder="e.g. chicken burrito bowl, no sour cream, I ate about half">${esc(photo.desc)}</textarea></label>
       ${photo.error ? `<div class="note warn">${esc(photo.error)}</div>` : ""}
-      <button class="btn" data-act="run-estimate">${photo.image ? "Estimate this meal" : "Estimate from description"}</button>`;
+      <button class="btn" data-act="run-estimate">${photo.images.length ? `Estimate this meal${photo.images.length > 1 ? ` (${photo.images.length} photos)` : ""}` : "Estimate from description"}</button>`;
   }
   const est = photo.est;
   const tot = est.items.reduce((t, i) => ({ kcal: t.kcal + i.kcal, p: t.p + i.p, c: t.c + i.c, f: t.f + i.f }), { kcal: 0, p: 0, c: 0, f: 0 });
-  return `${photo.image ? `<img class="photo-preview" src="${photo.image.dataUrl}" alt="Your photo" style="max-height:160px">` : ""}
+  return `${photo.images.length ? photoThumbs(false, true) : ""}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b>Claude's estimate</b><span class="badge">${esc(est.confidence)} confidence</span></div>
     ${est.notes ? `<div class="note">${esc(est.notes)}</div>` : ""}
     ${photo.error ? `<div class="note warn">${esc(photo.error)}</div>` : ""}
@@ -1124,7 +1190,7 @@ function syncAiEdits() {
 async function runEstimate(refine = false) {
   const descEl = $("#photoDesc");
   if (descEl) photo.desc = descEl.value;
-  if (!photo.image && !photo.desc.trim()) return toast(addState?.mode === "type" ? "Type what you ate first." : "Add a photo or a description first.");
+  if (!photo.images.length && !photo.desc.trim()) return toast(addState?.mode === "type" ? "Type what you ate first." : "Add a photo or a description first.");
   let answers = [], previous = null;
   if (refine) {
     syncAiEdits();
@@ -1138,7 +1204,7 @@ async function runEstimate(refine = false) {
   try {
     const est = await estimateFood({
       apiKey: state.apiKey, model: state.model || DEFAULT_MODEL,
-      image: photo.image, description: photo.desc, answers, previous, diet: P().diet || [], known: photo.image ? "" : knownFoodsText(),
+      images: photo.images, description: photo.desc, answers, previous, diet: P().diet || [], known: photo.images.length ? "" : knownFoodsText(),
     });
     if (!photo) return; // sheet was closed
     photo.est = est; photo.answers = {};
@@ -1385,16 +1451,18 @@ $("#importInput").addEventListener("change", async (e) => {
 });
 
 $("#photoInput").addEventListener("change", async (e) => {
-  const file = e.target.files[0];
+  const files = [...e.target.files];
   e.target.value = "";
-  if (!file || !photo) return;
-  try {
-    const descEl = $("#photoDesc");
-    if (descEl) photo.desc = descEl.value;
-    photo.image = await prepareImage(file);
-    photo.est = null; photo.error = null;
-    renderAdd();
-  } catch (err) { toast(err.message || "Couldn't read that photo."); }
+  if (!files.length || !photo) return;
+  const descEl = $("#photoDesc");
+  if (descEl) photo.desc = descEl.value;
+  const room = MAX_PHOTOS - photo.images.length;
+  if (files.length > room) toast(`Up to ${MAX_PHOTOS} photos per meal.`);
+  for (const file of files.slice(0, Math.max(0, room))) {
+    try { photo.images.push(await prepareImage(file)); } catch (err) { toast(err.message || "Couldn't read that photo."); }
+  }
+  photo.est = null; photo.error = null;
+  if (addState) renderAdd();
 });
 
 /* =========================================================
@@ -3018,27 +3086,36 @@ document.addEventListener("click", (ev) => {
     case "coach-review": openReview(false); break;
     case "review-again": runReview(); break;
     case "pick-meal": addState.meal = v; renderAdd(); break;
-    case "add-mode": syncAiEdits(); if (v === "label" && lbl?.foodId) lbl = null; addState.mode = v; renderAdd(); break;
+    case "add-mode": syncAiEdits(); addState.mode = v; renderAdd(); break;
     case "pick-label": $("#labelInput").click(); break;
     case "lbl-unit": {
-      // keep the same physical amount when switching between g and oz
-      const n = Number(lbl.amount) || 0;
-      if (lbl.unit === "g" && v === "oz") lbl.amount = r1(n / 28.3495);
-      else if (lbl.unit === "oz" && v === "g") lbl.amount = r0(n * 28.3495);
-      else if (v === "servings") lbl.amount = lbl.unit === "servings" ? n : r1((lbl.unit === "oz" ? n * 28.3495 : n) / lbl.data.servAmt);
-      else if (lbl.unit === "servings") lbl.amount = r0(n * lbl.data.servAmt * (v === "oz" ? 1 / 28.3495 : 1));
-      lbl.unit = v; renderAdd();
+      const it = lbl?.items[Number(t.dataset.i)];
+      if (!it?.data) break;
+      const n = Number(it.amount) || 0;
+      if (it.unit === "g" && v === "oz") it.amount = r1(n / 28.3495);
+      else if (it.unit === "oz" && v === "g") it.amount = r0(n * 28.3495);
+      else if (v === "servings") it.amount = it.unit === "servings" ? n : r1((it.unit === "oz" ? n * 28.3495 : n) / it.data.servAmt);
+      else if (it.unit === "servings") it.amount = r0(n * it.data.servAmt * (v === "oz" ? 1 / 28.3495 : 1));
+      it.unit = v; renderAdd();
       break;
     }
-    case "lbl-add": addFromLabel(); break;
-    case "lbl-reset": lbl = null; renderAdd(); break;
+    case "lbl-add": addFromLabels(); break;
+    case "lbl-rm": lbl?.items.splice(Number(t.dataset.i), 1); renderAdd(); break;
+    case "lbl-retry": {
+      const it = lbl?.items[Number(t.dataset.i)];
+      if (!it?.image) break;
+      it.loading = true; it.error = null; renderAdd();
+      readOneLabel(it, lbl);
+      break;
+    }
     case "add-food": {
       const f = p.foods.find((x) => x.id === t.dataset.id);
       if (!f) break;
       if (f.label) {
         const L = f.label;
-        lbl = { image: null, loading: false, error: null, foodId: f.id, unit: L.lastUnit || "", amount: L.lastAmount ?? "",
-          data: { name: f.name, servText: L.servText, servAmt: L.servAmt, servUnit: L.servUnit, kcal: f.kcal, p: f.p, c: f.c, f: f.f, fiber: L.fiber, allergens: L.allergens || "" } };
+        if (!lbl) lbl = { items: [] };
+        lbl.items.push(lblItem({ foodId: f.id, unit: L.lastUnit || "", amount: L.lastAmount ?? "",
+          data: { name: f.name, servText: L.servText, servAmt: L.servAmt, servUnit: L.servUnit, kcal: f.kcal, p: f.p, c: f.c, f: f.f, fiber: L.fiber, allergens: L.allergens || "" } }));
         addState.mode = "label"; renderAdd();
         break;
       }
@@ -3049,6 +3126,7 @@ document.addEventListener("click", (ev) => {
     }
     case "pick-photo": { const d = $("#photoDesc"); if (d && photo) photo.desc = d.value; $("#photoInput").click(); break; }
     case "run-estimate": runEstimate(false); break;
+    case "photo-rm": { const d = $("#photoDesc"); if (d && photo) photo.desc = d.value; photo?.images.splice(Number(t.dataset.i), 1); renderAdd(); break; }
     case "refine": runEstimate(true); break;
     case "answer": {
       syncAiEdits();
@@ -3058,7 +3136,7 @@ document.addEventListener("click", (ev) => {
       break;
     }
     case "ai-rm": syncAiEdits(); photo.est.items.splice(Number(t.dataset.i), 1); renderAdd(); break;
-    case "ai-reset": photo = addState?.mode === "type" ? { image: null, est: null, answers: {}, desc: photo?.desc || "" } : null; renderAdd(); break;
+    case "ai-reset": photo = addState?.mode === "type" ? { images: [], est: null, answers: {}, desc: photo?.desc || "" } : null; renderAdd(); break;
     case "ai-add": {
       syncAiEdits();
       const meal = addState.meal;

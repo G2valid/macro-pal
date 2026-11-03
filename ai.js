@@ -105,19 +105,23 @@ function loadImg(file) {
  * @param {object} o
  * @param {string} o.apiKey
  * @param {string} o.model
- * @param {{base64:string, mediaType:string}|null} o.image
+ * @param {{base64:string, mediaType:string}|null} o.image  one photo (or pass o.images for several)
  * @param {string} o.description  free-text from the user
  * @param {Array<{question:string, answer:string}>} o.answers  answers to earlier questions
  * @param {object|null} o.previous  the previous estimate, when refining
  */
-export async function estimateFood({ apiKey, model, image, description, answers = [], previous = null, diet = [], known = "" }) {
+export async function estimateFood({ apiKey, model, image, images = [], description, answers = [], previous = null, diet = [], known = "" }) {
+  const imgs = images.length ? images : image ? [image] : [];
   const content = [];
-  if (image) {
-    content.push({ type: "image", source: { type: "base64", media_type: image.mediaType, data: image.base64 } });
+  for (const img of imgs) {
+    content.push({ type: "image", source: { type: "base64", media_type: img.mediaType, data: img.base64 } });
   }
   let text = description?.trim()
-    ? `${image ? "Description from the user" : "The user typed or dictated what they ate (no photo)"}: ${description.trim()}`
-    : "Estimate the food in this photo.";
+    ? `${imgs.length ? "Description from the user" : "The user typed or dictated what they ate (no photo)"}: ${description.trim()}`
+    : imgs.length > 1 ? "Estimate the food in these photos." : "Estimate the food in this photo.";
+  if (imgs.length > 1) {
+    text += `\n\nThese ${imgs.length} photos are all part of one meal (different dishes, drinks, angles or packages). Count each food once, even if it appears in more than one photo. If a photo shows a nutrition label, use its exact numbers for that food.`;
+  }
   if (known) {
     text += `\n\nFoods the user has saved, with exact nutrition. When they mention one of these, use these numbers scaled to the amount they say:\n${known}`;
   }
