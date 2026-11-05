@@ -1,6 +1,6 @@
-import { estimateFood, readFitnessScreens, suggestMeals, reviewEating, suggestExampleDay, readLabel, generatePlan, prepareImage, MODELS, DEFAULT_MODEL, LABEL_MODEL } from "./ai.js?v=12";
+import { estimateFood, readFitnessScreens, suggestMeals, reviewEating, suggestExampleDay, readLabel, generatePlan, prepareImage, swapIngredient, splitMeal, MODELS, DEFAULT_MODEL, LABEL_MODEL } from "./ai.js?v=13";
 import { buildPlanPrompt, parsePlanReply, normalizePlan, groceryList, groceryText, fmtQty } from "./planner.js?v=3";
-import { buildExampleDay, mealBudgets, MEAL_PATTERNS } from "./mealplan.js?v=2";
+import { buildExampleDay, mealBudgets, MEAL_PATTERNS } from "./mealplan.js?v=3";
 import { COACHES, DEFAULT_COACH, seasonalCoach, coachLine, guestChance, phaseLine, inSeason } from "./coaches.js?v=16";
 import { TRIGGER_META, LINE_ID, FALLBACK, T } from "./triggers.js?v=6";
 
@@ -81,14 +81,17 @@ const r0 = (n) => Math.round(n || 0);
 const r1 = (n) => Math.round((n || 0) * 10) / 10;
 const r2 = (n) => Math.round((n || 0) * 100) / 100;
 /** Leading amount of a portion like "6 oz", "1 1/2 cups", "2/3 cup", "0.5 bar". */
+const UFRAC = { "¼": 0.25, "½": 0.5, "¾": 0.75, "⅓": 1 / 3, "⅔": 2 / 3 };
 function parseQty(str) {
+  const u = String(str ?? "").trim().match(/^(\d+)?\s*([¼½¾⅓⅔])/);
+  if (u) return Number(u[1] || 0) + UFRAC[u[2]];
   const m = String(str ?? "").trim().match(/^(\d+)\s+(\d+)\/(\d+)|^(\d+)\/(\d+)|^(\d*\.?\d+)/);
   if (!m) return null;
   if (m[1]) return Number(m[1]) + Number(m[2]) / Number(m[3]);
   if (m[4]) return Number(m[4]) / Number(m[5]);
   return Number(m[6]);
 }
-const QTY_RE = /^\s*(\d+\s+\d+\/\d+|\d+\/\d+|\d*\.?\d+)/;
+const QTY_RE = /^\s*(\d*\s*[¼½¾⅓⅔]|\d+\s+\d+\/\d+|\d+\/\d+|\d*\.?\d+)/;
 const numQty = (q) => String(+q.toFixed(2));
 
 /* =========================================================
@@ -305,6 +308,7 @@ function renderToday() {
     return `<div class="card meal">
       <div class="meal-head"><h3><span class="emo">${MEAL_EMO[m]}</span> ${m}${es.length ? `<span class="kc num">${r0(mt.kcal)} kcal</span>` : ""}</h3>
         <button class="meal-add" data-act="open-add" data-meal="${m}" aria-label="Add to ${m}">+</button></div>
+      ${quickPicksHtml(m)}
       ${es.length ? es.map((e) => `<button class="entry" data-act="edit-entry" data-id="${e.id}">
           <div><div class="nm">${esc(e.name)}${e.ai ? " ✨" : ""}</div>
           <div class="sub num">${e.servings && e.servings !== 1 ? `${e.servings} × ` : ""}${esc(e.portion || "")}${e.portion ? " · " : ""}P ${r0(e.p * (e.servings || 1))} · C ${r0(e.c * (e.servings || 1))} · F ${r0(e.f * (e.servings || 1))}</div></div>
@@ -839,7 +843,15 @@ function mealPicker() {
   return `<div class="seg">${MEALS.map((m) => `<button class="${addState.meal === m ? "on" : ""}" data-act="pick-meal" data-v="${m}">${m}</button>`).join("")}</div>`;
 }
 
+function openQuick(meal, items) {
+  addState = { meal, mode: "foods", q: "", quick: true };
+  photo = { images: [], est: null, answers: {}, desc: "" };
+  lbl = { items };
+  renderAdd();
+}
+
 function renderAdd() {
+  if (addState.quick && !lbl?.items.length) addState.quick = false;
   const modes = [["label", "🏷️ Label reader"], ["type", "✍️ Type it"], ["photo", "📷 Photo"], ["foods", "My foods"], ["quick", "Manual"]];
   let body = "";
   if (addState.mode === "type") body = typeBody();
@@ -847,7 +859,9 @@ function renderAdd() {
   if (addState.mode === "label") body = labelBody();
   if (addState.mode === "foods") body = foodsBody();
   if (addState.mode === "quick") body = quickBody();
-  const html = `${sheetTitle(`Add to ${addState.meal}`)}
+  const html = addState.quick
+    ? `${sheetTitle(`Add to ${addState.meal}`)}<div id="addBody">${plateHtml()}<button class="btn secondary" data-act="quick-more" style="margin-top:8px">More options</button></div>`
+    : `${sheetTitle(`Add to ${addState.meal}`)}
     ${mealPicker()}
     <div class="chips" style="margin-bottom:14px">${modes.map(([k, l]) => `<button class="chip ${addState.mode === k ? "on" : ""}" data-act="add-mode" data-v="${k}">${l}</button>`).join("")}</div>
     <div id="addBody">${body}</div>`;
@@ -881,6 +895,7 @@ function foodsBody() {
   const has = lbl.items.length > 0;
   return `${addState.local ? `<div class="note">✨ All found in your saved foods, so no Claude needed (free). Check the amounts. <button class="link-btn" data-act="local-to-claude">Ask Claude instead</button></div>` : ""}
     ${plateHtml()}
+    ${savedMealsHtml()}
     ${has ? `<div class="sl-head" style="margin-top:16px"><b>Add more</b></div>` : ""}
     <input class="input search" id="foodSearch" type="search" placeholder="Search your foods" value="${esc(addState.q)}">
     <div id="foodResults">${foodResults()}</div>`;
@@ -1140,7 +1155,8 @@ function plateHtml(extra = "") {
   const n = ready.length;
   return `${lbl.items.map(labelCard).join("")}${extra}
     ${n ? `<div class="ai-total num" id="lblTotal"></div>` : ""}
-    <button class="btn sticky-add" data-act="lbl-add" ${busy || !n ? "disabled" : ""}>${busy ? "Reading labels…" : `Add ${n > 1 ? `all ${n} ` : ""}to ${addState.meal}`}</button>`;
+    <button class="btn sticky-add" data-act="lbl-add" ${busy || !n ? "disabled" : ""}>${busy ? "Reading labels…" : `Add ${n > 1 ? `all ${n} ` : ""}to ${addState.meal}`}</button>
+    ${n && !busy && !addState.quick ? `<button class="btn secondary" data-act="plate-save">⭐ Save as a meal</button>` : ""}`;
 }
 
 function labelBody() {
@@ -1239,9 +1255,10 @@ function addFromLabels() {
     const portion = it.unit === "servings" ? `${amount} serving${amount === 1 ? "" : "s"}` : `${amount} ${it.unit}`;
     addEntry({ name, portion, kcal: t.kcal, p: r1(t.p), c: r1(t.c), f: r1(t.f), servings: 1 }, { saveFood: false });
     // Remember the product per serving (and this amount) so next time it's tap + amount.
-    let f = (it.foodId && p.foods.find((x) => x.id === it.foodId)) || (d.isLabel && p.foods.find((x) => x.label && x.name.toLowerCase() === name.toLowerCase()));
+    let f = (it.foodId && p.foods.find((x) => x.id === it.foodId)) || p.foods.find((x) => !!x.label === !!d.isLabel && x.name.trim().toLowerCase() === name.toLowerCase());
     if (!f) { f = { id: uid(), uses: 0 }; p.foods.push(f); }
-    Object.assign(f, { name, portion: d.servText || "1 serving", kcal: d.kcal, p: d.p, c: d.c, f: d.f, lastUsed: Date.now() });
+    if (d.isLabel || !f.label) Object.assign(f, { name, portion: d.servText || "1 serving", kcal: d.kcal, p: d.p, c: d.c, f: d.f });
+    f.lastUsed = Date.now();
     if (d.isLabel) f.label = { servText: d.servText, servAmt: d.servAmt, servUnit: d.servUnit, fiber: d.fiber, allergens: d.allergens, lastUnit: it.unit, lastAmount: amount };
     else Object.assign(f, { lastUnit: it.unit, lastAmount: amount });
     f.uses = (f.uses || 0) + 1;
@@ -1359,12 +1376,12 @@ function bindAiItems() {
 function stepAiItem(it, dir) {
   const cur = parseQty(it.portion);
   if (cur && it.baseQty && QTY_RE.test(it.portion)) {
-    const step = cur <= 1 ? 0.25 : cur < 4 ? 0.5 : cur < 20 ? 1 : cur < 100 ? 5 : 10;
+    const step = cur < 1 ? 0.25 : cur < 4 ? 0.5 : cur < 20 ? 1 : cur < 100 ? 5 : 10;
     const next = Math.max(step, r2(cur + dir * step));
     it.portion = it.portion.replace(QTY_RE, (m) => m.replace(m.trim(), numQty(next)));
     it.mult = next / it.baseQty;
   } else {
-    it.mult = Math.max(0.5, r2((it.mult || 1) + dir * 0.5));
+    it.mult = Math.max(0.25, r2((it.mult || 1) + dir * 0.25));
     it.portion = it.mult === 1 ? it.basePortion : `${numQty(it.mult)} × ${it.basePortion}`;
   }
 }
@@ -1465,6 +1482,230 @@ async function runEstimate(refine = false, { noLocal = false } = {}) {
   }
   photo.loading = false;
   if (addState) renderAdd();
+}
+
+/* =========================================================
+   🍳 Make this: adjust a suggested meal (amounts, swaps), then log or save it
+   ========================================================= */
+let mk = null; // { title, why, how, meal, date, items, back, swap, swapQ, busy, error, split, planKey }
+
+function mkItem(x, { noQty = false } = {}) {
+  const portion = x.portion || "";
+  return { name: x.name, portion, basePortion: portion, baseQty: noQty ? null : parseQty(portion), mult: 1, base: { kcal: x.kcal, p: x.p, c: x.c, f: x.f } };
+}
+
+function openMake({ title, why = "", how = "", items, meal, date = today(), back = null, split = null, planKey = null }) {
+  mk = { title: title.replace(/^🔥\s*/, ""), why, how, meal: meal || defaultMeal(), date, items: items.map((x) => mkItem(x, { noQty: !!split })), back, swap: null, swapQ: "", split, planKey, fresh: true };
+  renderMake();
+}
+
+const macLine = (s) => `${r0(s.kcal)} kcal · <span style="color:var(--protein)">P ${r0(s.p)}</span> · <span style="color:var(--carbs)">C ${r0(s.c)}</span> · <span style="color:var(--fat)">F ${r0(s.f)}</span>`;
+
+function swapMatches() {
+  const q = mk.swapQ.trim().toLowerCase();
+  const list = (q ? savedFoods().filter((f) => f.name.toLowerCase().includes(q)) : savedFoods()).slice(0, 6);
+  return list.length ? `<div class="small muted" style="margin:8px 0 4px">${q ? "Your foods (free):" : "Or one of your foods (free):"}</div>
+    <div class="chips">${list.map((f) => `<button class="chip" data-act="mk-pick" data-id="${f.id}">${f.label ? "🏷️" : "⭐"} ${esc(f.name)}</button>`).join("")}</div>` : "";
+}
+function swapPanel(i) {
+  return `<div class="swap-panel">
+    <div class="small" style="font-weight:600;margin-bottom:6px">${i >= 0 ? `Swap ${esc(mk.items[i].name)} for…` : "Add to this meal…"}</div>
+    <div class="swap-row"><input class="input" id="mkSwapQ" data-fk="mkswap" value="${esc(mk.swapQ)}" placeholder="${i >= 0 ? "e.g. sweet potato, cauliflower rice" : "e.g. 1 cup berries"}" enterkeyhint="go" autocomplete="off">
+      <button class="btn" data-act="mk-ask" style="width:auto;padding:10px 14px;flex:none" ${mk.busy ? "disabled" : ""}>✨ Claude</button></div>
+    <div id="mkSwapMatches">${swapMatches()}</div>
+    <button class="link-btn small" data-act="mk-swap-cancel" style="margin-top:10px">Cancel</button>
+  </div>`;
+}
+function mkCard(it, i) {
+  return `<div class="ai-item mk-item">
+    <div class="hdr"><b class="grow">${esc(it.name)}</b>${it.busy ? `<div class="spinner sm"></div>` : `<button class="chip mk-sw" data-act="mk-swap" data-i="${i}">⇄ Swap</button><button class="rm" data-act="mk-rm" data-i="${i}">Remove</button>`}</div>
+    <div class="amt-row">
+      <button class="amt-btn" data-act="mk-amt" data-i="${i}" data-d="-1" aria-label="Less ${esc(it.name)}">−</button>
+      <input class="input" data-mk="portion" data-i="${i}" data-fk="mkp-${i}" value="${esc(it.portion)}" placeholder="1 serving" aria-label="How much ${esc(it.name)}">
+      <button class="amt-btn" data-act="mk-amt" data-i="${i}" data-d="1" aria-label="More ${esc(it.name)}">+</button>
+    </div>
+    <div class="small num mk-mac" data-mm="${i}">${macLine(scaled(it))}</div>
+    ${mk.swap === i ? swapPanel(i) : ""}
+  </div>`;
+}
+
+function renderMake() {
+  const html = `${sheetTitle("🍳 Make & adjust")}
+    ${mk.back ? `<button class="link-btn" data-act="mk-back" style="margin:-6px 2px 10px">‹ Back</button>` : ""}
+    <h2 style="margin:0 2px 4px">${esc(mk.title)}</h2>
+    ${mk.why ? `<p class="small muted" style="margin:0 2px 10px">${esc(mk.why)}</p>` : ""}
+    <div class="seg">${MEALS.map((m) => `<button class="${mk.meal === m ? "on" : ""}" data-act="mk-meal" data-v="${m}">${m}</button>`).join("")}</div>
+    ${mk.split ? `<div class="note small">This is your whole portion. Split it to change each part (more potatoes, less chicken…). <button class="link-btn" data-act="mk-split" ${mk.busy ? "disabled" : ""}>${mk.busy ? "Splitting…" : "✨ Split into ingredients"}</button></div>` : ""}
+    ${mk.error ? `<div class="note warn">${esc(mk.error)}</div>` : ""}
+    <p class="hint" style="margin:0 2px 8px">Change any amount or tap − / +. ⇄ Swap trades an ingredient for something else.</p>
+    <div id="mkItems">${mk.items.map(mkCard).join("") || `<div class="empty">No ingredients. Add one below.</div>`}</div>
+    ${mk.swap === -1 ? swapPanel(-1) : `<button class="btn secondary" data-act="mk-add-ing" style="margin-bottom:10px">＋ Add an ingredient</button>`}
+    <div class="ai-total num" id="mkTotal"></div>
+    <div class="small muted num" id="mkLeft" style="margin:-4px 2px 12px"></div>
+    ${mk.how ? `<details class="mk-how" open><summary>How to make it</summary><p>${esc(mk.how)}</p></details>` : ""}
+    <button class="btn sticky-add" data-act="mk-log" ${mk.items.length && !mk.busy ? "" : "disabled"}>✅ Log it to ${mk.meal}</button>
+    <button class="btn secondary" data-act="mk-save" ${mk.items.length ? "" : "disabled"}>⭐ Save as a meal</button>`;
+  if ($("#sheet").hidden) openSheet(html, () => (mk = null));
+  else {
+    const st = $("#sheetBody").scrollTop;
+    $("#sheetBody").innerHTML = html;
+    $("#sheetBody").scrollTop = mk.fresh ? 0 : st;
+  }
+  mk.fresh = false;
+  bindMake();
+}
+
+function updMk() {
+  mk.items.forEach((it, i) => { const el = document.querySelector(`[data-mm="${i}"]`); if (el) el.innerHTML = macLine(scaled(it)); });
+  const t = mk.items.map(scaled).reduce((s, x) => ({ kcal: s.kcal + x.kcal, p: s.p + x.p, c: s.c + x.c, f: s.f + x.f }), { kcal: 0, p: 0, c: 0, f: 0 });
+  $("#mkTotal").innerHTML = `<span>Meal total</span><span>${r0(t.kcal)} kcal · P ${r0(t.p)} · C ${r0(t.c)} · F ${r0(t.f)}</span>`;
+  if (mk.date === today()) {
+    const tg = dayGoal(today()), tot = totals(dayData(today()).entries);
+    const lk = r0(tg.kcal - tot.kcal - t.kcal), lp = r0(tg.protein - tot.p - t.p);
+    $("#mkLeft").textContent = `After this: ${lk >= 0 ? `${lk} kcal left` : `${-lk} kcal over`} · ${lp > 0 ? `${lp} g protein to go` : "protein goal hit ✓"} today`;
+  }
+}
+
+function bindMake() {
+  document.querySelectorAll("[data-mk=portion]").forEach((inp) => inp.addEventListener("input", () => {
+    const it = mk.items[Number(inp.dataset.i)];
+    it.portion = inp.value;
+    const q = parseQty(it.portion);
+    if (q && it.baseQty) it.mult = q / it.baseQty;
+    updMk();
+  }));
+  const sq = $("#mkSwapQ");
+  if (sq) {
+    sq.addEventListener("input", () => { mk.swapQ = sq.value; $("#mkSwapMatches").innerHTML = swapMatches(); });
+    sq.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); mkAsk(); } });
+  }
+  updMk();
+}
+
+const onMakeSheet = () => !!document.querySelector("#mkItems");
+
+/** A saved food as an ingredient, at its usual amount. */
+function mkFromSaved(f) {
+  const it = savedFoodItem(f);
+  const d = it.data;
+  const amount = it.amount === "" ? fromServings(d, 1, it.unit) : Number(it.amount);
+  const portion = it.unit === "servings" ? `${amount} serving${amount === 1 ? "" : "s"}` : `${amount} ${it.unit}`;
+  return mkItem({ name: f.name, portion, ...labelMath(d, amount, it.unit) });
+}
+
+async function mkAsk() {
+  const text = ($("#mkSwapQ")?.value ?? mk.swapQ).trim();
+  if (!text) return toast("Type what to use instead.");
+  if (!state.apiKey) { closeSheet(); openAiSettings(); return; }
+  const idx = mk.swap;
+  mk.busy = true; mk.error = null;
+  if (idx >= 0) mk.items[idx].busy = true;
+  renderMake();
+  try {
+    const r = await swapIngredient({ apiKey: state.apiKey, meal: mk.title, items: mk.items.map((it) => ({ name: it.name, portion: it.portion, ...scaled(it) })), index: idx, replacement: text, diet: P().diet || [] });
+    if (!mk) return;
+    if (idx >= 0) mk.items[idx] = mkItem(r); else mk.items.push(mkItem(r));
+    mk.swap = null; mk.swapQ = "";
+  } catch (err) {
+    if (!mk) return;
+    mk.error = err.message;
+    if (idx >= 0 && mk.items[idx]) mk.items[idx].busy = false;
+  }
+  mk.busy = false;
+  if (onMakeSheet()) renderMake();
+}
+
+async function mkSplit() {
+  if (!state.apiKey) { closeSheet(); openAiSettings(); return; }
+  const s = mk.split;
+  mk.busy = true; mk.error = null; renderMake();
+  try {
+    const items = await splitMeal({ apiKey: state.apiKey, title: mk.title, recipe: s.recipe, serving: s.serving, kcal: s.kcal, p: s.p, c: s.c, f: s.f });
+    if (!mk) return;
+    if (items.length) { mk.items = items.map((x) => mkItem(x)); mk.split = null; }
+  } catch (err) {
+    if (mk) mk.error = err.message;
+  }
+  if (!mk) return;
+  mk.busy = false;
+  if (onMakeSheet()) renderMake();
+}
+
+function mkLog() {
+  const prevDay = currentDay;
+  currentDay = mk.date;
+  addState = { meal: mk.meal };
+  mk.items.forEach((it) => addEntry({ name: it.name, portion: it.portion, ...scaled(it), servings: 1 }, { ai: true }));
+  addState = null;
+  if (mk.planKey) {
+    const [date, id] = mk.planKey.split("|");
+    (state.plan.logged ||= {})[`${date}|${id}|${myPlanId()}`] = 1;
+    if (date === today()) coachFire("meal_plan_meal_logged");
+  }
+  save();
+  if (mk.date !== today()) currentDay = prevDay;
+  const meal = mk.meal, title = mk.title;
+  mk = null;
+  closeSheet(); render(); toast(`Logged ${title} to ${meal} ✅`);
+}
+
+/* ---------- ⭐ Saved meals ---------- */
+function mealItemFromMk(it) {
+  const servText = it.portion || "1 serving";
+  const g = portionGrams(servText);
+  const data = { name: it.name, servText, servAmt: g.amt || 0, servUnit: g.unit || "", ...scaled(it), fiber: 0, allergens: "", isLabel: false };
+  const unit = defaultUnit(data);
+  return { foodId: null, data, unit, amount: fromServings(data, 1, unit) };
+}
+function saveMeal(defName, meal, items) {
+  const name = (prompt("Name this meal", defName) || "").trim();
+  if (!name) return false;
+  const p = P();
+  (p.meals ||= []).push({ id: uid(), name: name.slice(0, 50), meal, items, uses: 0, created: Date.now() });
+  save(); render();
+  toast(`⭐ Saved "${name}" · find it in My foods and on Today`);
+  return true;
+}
+const mealTotal = (m) => m.items.reduce((t, x) => { const v = labelMath(x.data, Number(x.amount) || 0, x.unit); return { kcal: t.kcal + v.kcal, p: t.p + v.p }; }, { kcal: 0, p: 0 });
+function mealToPlate(m) {
+  m.uses = (m.uses || 0) + 1; m.lastUsed = Date.now(); save();
+  return m.items.map((x) => {
+    const f = x.foodId && (P().foods || []).find((y) => y.id === x.foodId);
+    const it = f ? savedFoodItem(f) : lblItem({ data: { ...x.data } });
+    if (labelUnits(it.data).includes(x.unit)) { it.unit = x.unit; it.amount = x.amount; }
+    return it;
+  });
+}
+function savedMealsHtml() {
+  const meals = [...(P().meals || [])].sort((a, b) => (b.lastUsed || b.created || 0) - (a.lastUsed || a.created || 0));
+  if (!meals.length || addState?.q) return "";
+  return `<div class="sl-head" style="margin-top:4px"><b>⭐ Saved meals</b><span class="small muted">tap to add the whole meal</span></div>
+    <div class="saved-meals">${meals.map((m) => { const t = mealTotal(m); return `<div class="sm-row">
+      <button class="food-item" data-act="meal-load" data-id="${m.id}"><div class="grow"><div class="nm">🍽️ ${esc(m.name)}</div><div class="sub num">${m.items.length} item${m.items.length === 1 ? "" : "s"} · ${r0(t.kcal)} kcal · P ${r0(t.p)}${m.meal ? ` · ${esc(m.meal)}` : ""}</div></div><span class="plus-sm">+</span></button>
+      <button class="sm-x" data-act="meal-del" data-id="${m.id}" aria-label="Delete ${esc(m.name)}">✕</button></div>`; }).join("")}</div>`;
+}
+
+/* ---------- Quick picks on Today's meal cards ---------- */
+function quickPicks(meal) {
+  const p = P();
+  const out = (p.meals || []).filter((m) => m.meal === meal).sort((a, b) => (b.uses || 0) - (a.uses || 0)).slice(0, 2).map((m) => ({ kind: "meal", id: m.id, label: m.name }));
+  const cutoff = addDays(today(), -30);
+  const counts = new Map();
+  for (const [d, v] of Object.entries(p.days || {})) {
+    if (d < cutoff) continue;
+    for (const e of v.entries || []) if (e.meal === meal) { const k = e.name.trim().toLowerCase(); counts.set(k, (counts.get(k) || 0) + 1); }
+  }
+  const foods = savedFoods();
+  for (const [k] of [...counts.entries()].sort((x, y) => y[1] - x[1])) {
+    if (out.length >= 3) break;
+    const f = foods.find((x) => x.name.trim().toLowerCase() === k);
+    if (f) out.push({ kind: "food", id: f.id, label: f.name });
+  }
+  return out;
+}
+function quickPicksHtml(meal) {
+  const picks = quickPicks(meal);
+  return picks.length ? `<div class="quick-picks">${picks.map((q) => `<button class="qp" data-act="qp" data-k="${q.kind}" data-id="${q.id}" data-meal="${meal}">${q.kind === "meal" ? "⭐" : "＋"} ${esc(q.label.length > 24 ? q.label.slice(0, 23) + "…" : q.label)}</button>`).join("")}</div>` : "";
 }
 
 /* =========================================================
@@ -1806,8 +2047,10 @@ function renderIdeas() {
         <div class="small muted" style="margin:2px 0 6px">${esc(it.portion)} · <span style="color:var(--protein)">P ${r0(it.p)}</span> · <span style="color:var(--carbs)">C ${r0(it.c)}</span> · <span style="color:var(--fat)">F ${r0(it.f)}</span></div>
         <div class="small" style="margin-bottom:8px">${esc(it.why)}</div>
         <details class="small"><summary style="color:var(--accent);font-weight:600;cursor:pointer">Ingredients & how to make it</summary>
-          <ul style="margin:6px 0;padding-left:18px">${it.ingredients.map((x) => `<li>${esc(x)}</li>`).join("")}</ul><p style="margin:0">${esc(it.how)}</p></details>
-        <button class="btn" style="margin-top:10px;padding:10px" data-act="idea-add" data-i="${i}">+ Log to ${ideas.meal}</button>
+          <ul style="margin:6px 0;padding-left:18px">${(it.items || []).map((x) => `<li>${esc([x.portion, x.name].filter(Boolean).join(" "))} <span class="muted num">· ${x.kcal}</span></li>`).join("")}</ul><p style="margin:0">${esc(it.how)}</p></details>
+        <div class="btn-row" style="margin-top:10px">
+          <button class="btn secondary" style="padding:10px" data-act="idea-make" data-i="${i}">🍳 Make & adjust</button>
+          <button class="btn" style="padding:10px" data-act="idea-add" data-i="${i}">+ Log to ${ideas.meal}</button></div>
       </div>`).join("")}
       <button class="btn secondary" data-act="idea-again">More ideas</button>`;
   }
@@ -1910,6 +2153,7 @@ function renderExampleDay() {
     ? { meals: budgets.map((b) => ({ ...b, ...(exDay.claude.meals.find((m) => m.slot.toLowerCase() === b.name.toLowerCase()) || { title: "", items: [], total: { kcal: 0, p: 0, c: 0, f: 0 } }) })) }
     : built;
   plan.total = plan.meals.reduce((t, m) => ({ kcal: t.kcal + m.total.kcal, p: t.p + m.total.p, c: t.c + m.total.c, f: t.f + m.total.f }), { kcal: 0, p: 0, c: 0, f: 0 });
+  exDay.meals = plan.meals;
   const pk = tg.protein * 4, ck = tg.carbs * 4, fk = tg.fat * 9;
   const mac = (x) => `<span style="color:var(--protein)">P ${x.p}</span> · <span style="color:var(--carbs)">C ${x.c}</span> · <span style="color:var(--fat)">F ${x.f}</span>`;
 
@@ -1934,6 +2178,7 @@ function renderExampleDay() {
         ${m.title ? `<div style="font-weight:600;margin-bottom:4px">${esc(m.title)}</div>` : ""}
         ${m.items.map((i) => `<div style="display:flex;justify-content:space-between;gap:10px;font-size:14px;padding:3px 0"><span>${esc(i.name)}</span><span class="muted num" style="white-space:nowrap">${i.kcal}</span></div>`).join("") || `<div class="small muted">—</div>`}
         <div class="small muted num" style="border-top:1px solid var(--line);margin-top:6px;padding-top:6px">≈ ${m.total.kcal} kcal · ${mac(m.total)} g</div>
+        ${m.items.length ? `<button class="btn secondary" style="margin-top:10px;padding:10px" data-act="ex-make" data-i="${plan.meals.indexOf(m)}">🍳 Make & adjust</button>` : ""}
       </div>`).join("")}
       <div class="note small num"><b>Day total ≈ ${plan.total.kcal} kcal</b> · ${mac(plan.total)} g<br>Portions are rounded to everyday amounts, so totals land close to, not exactly on, your targets.</div>
       ${exDay.claude?.tips?.length ? `<div class="card" style="padding:12px 16px;margin-bottom:12px"><b>💡 Planning tips</b><ul style="margin:6px 0 0;padding-left:18px;display:grid;gap:4px;font-size:14px">${exDay.claude.tips.map((t) => `<li>${esc(t)}</li>`).join("")}</ul></div>` : ""}
@@ -2203,7 +2448,8 @@ function openPlanMeal(key) {
       <div class="small">${esc(por.serving)}</div><div class="small muted num">P ${por.p} · C ${por.c} · F ${por.f}</div></div>` : ""; }).join("")}
     ${m.ingredients.length ? `<h3 style="margin:10px 2px 6px">Ingredients (for everyone)</h3><div class="card" style="padding:10px 16px">${m.ingredients.map((g) => `<div style="display:flex;justify-content:space-between;gap:10px;font-size:14px;padding:3px 0"><span>${esc(g.name)}</span><span class="muted num">${esc([fmtQty(g.qty), g.unit].filter(Boolean).join(" "))}</span></div>`).join("")}</div>` : ""}
     <br>
-    ${me && m.portions[me] ? `<button class="btn" data-act="plan-log" data-v="${key}" ${done ? "disabled" : ""}>${done ? "✅ Logged" : `+ Log my portion to ${slotToMeal(m.slot)}`}</button>` : ""}
+    ${me && m.portions[me] ? `<button class="btn" data-act="plan-log" data-v="${key}" ${done ? "disabled" : ""}>${done ? "✅ Logged" : `+ Log my portion to ${slotToMeal(m.slot)}`}</button>
+      ${done ? "" : `<button class="btn secondary" data-act="plan-make" data-v="${key}">🍳 Adjust my portion, then log</button>`}` : ""}
     <button class="btn secondary" data-act="plan-reopen">← Back to plan</button>
     <button class="btn danger" data-act="plan-rm-meal" data-v="${key}">Remove from plan</button>`);
 }
@@ -3346,7 +3592,8 @@ document.addEventListener("click", (ev) => {
       const it = ideas.data.ideas[Number(t.dataset.i)];
       currentDay = today();
       addState = { meal: ideas.meal };
-      addEntry({ name: it.name, portion: it.portion, kcal: it.kcal, p: it.p, c: it.c, f: it.f, servings: 1 }, { ai: true });
+      if (it.items?.length) it.items.forEach((x) => addEntry({ name: x.name, portion: x.portion, kcal: x.kcal, p: x.p, c: x.c, f: x.f, servings: 1 }, { ai: true }));
+      else addEntry({ name: it.name, portion: it.portion, kcal: it.kcal, p: it.p, c: it.c, f: it.f, servings: 1 }, { ai: true });
       addState = null;
       render(); toast(`${it.name} added to ${ideas.meal} ✨`);
       break;
@@ -3373,6 +3620,72 @@ document.addEventListener("click", (ev) => {
       setTimeout(() => $(`[data-fk="amt-${lbl.items[lbl.items.length - 1].id}"]`)?.focus(), 60);
       break;
     }
+    case "quick-more": addState.quick = false; addState.mode = "foods"; renderAdd(); break;
+    case "plate-save": {
+      const ready = lblReady();
+      if (!ready.length) break;
+      saveMeal(ready.map((it) => it.data.name).slice(0, 3).join(" + "), addState.meal, ready.map((it) => ({ foodId: it.foodId, data: { ...it.data }, amount: Number(it.amount) || fromServings(it.data, 1, it.unit), unit: it.unit })));
+      renderAdd();
+      break;
+    }
+    case "meal-load": {
+      const m = (p.meals || []).find((x) => x.id === t.dataset.id);
+      if (!m) break;
+      if (!lbl) lbl = { items: [] };
+      lbl.items.push(...mealToPlate(m)); addState.q = ""; renderAdd();
+      break;
+    }
+    case "meal-del": {
+      const m = (p.meals || []).find((x) => x.id === t.dataset.id);
+      if (!m || !confirm(`Delete the saved meal "${m.name}"? Your saved foods stay.`)) break;
+      p.meals = p.meals.filter((x) => x.id !== m.id); save(); render(); renderAdd();
+      break;
+    }
+    case "qp": {
+      const meal = t.dataset.meal;
+      if (t.dataset.k === "meal") { const m = (p.meals || []).find((x) => x.id === t.dataset.id); if (m) openQuick(meal, mealToPlate(m)); }
+      else { const f = (p.foods || []).find((x) => x.id === t.dataset.id); if (f) openQuick(meal, [savedFoodItem(f)]); }
+      break;
+    }
+    case "idea-make": {
+      const it = ideas.data.ideas[Number(t.dataset.i)];
+      openMake({ title: it.name, why: it.why, how: it.how, items: it.items?.length ? it.items : [{ name: it.name, portion: it.portion, kcal: it.kcal, p: it.p, c: it.c, f: it.f }], meal: ideas.meal, back: () => renderIdeas() });
+      break;
+    }
+    case "ex-make": {
+      const m = exDay.meals?.[Number(t.dataset.i)];
+      if (!m) break;
+      openMake({ title: m.title || m.name, items: m.items.map((x) => ({ name: x.food || x.name, portion: x.food ? x.portion : "", kcal: x.kcal, p: x.p, c: x.c, f: x.f })), meal: slotToMeal(m.name), back: () => renderExampleDay() });
+      break;
+    }
+    case "plan-make": {
+      const [date, id] = v.split("|");
+      const m = state.plan.days.find((d) => d.date === date)?.meals.find((x) => x.id === id);
+      const por = m?.portions[myPlanId()];
+      if (!por) break;
+      openMake({ title: m.title, how: m.recipe, items: [{ name: m.title.replace(/^🔥\s*/, ""), portion: por.serving, kcal: por.kcal, p: por.p, c: por.c, f: por.f }], meal: slotToMeal(m.slot), date, planKey: v,
+        split: { recipe: m.recipe, serving: por.serving, kcal: por.kcal, p: por.p, c: por.c, f: por.f }, back: () => { closeSheet(); openPlanMeal(v); } });
+      break;
+    }
+    case "mk-back": { const b = mk?.back; mk = null; b?.(); break; }
+    case "mk-meal": mk.meal = v; renderMake(); break;
+    case "mk-amt": stepAiItem(mk.items[Number(t.dataset.i)], Number(t.dataset.d)); renderMake(); break;
+    case "mk-rm": { const i = Number(t.dataset.i); mk.items.splice(i, 1); if (mk.swap === i) mk.swap = null; renderMake(); break; }
+    case "mk-swap": { const i = Number(t.dataset.i); mk.swap = mk.swap === i ? null : i; mk.swapQ = ""; renderMake(); if (mk.swap != null) setTimeout(() => $("#mkSwapQ")?.focus(), 60); break; }
+    case "mk-add-ing": mk.swap = -1; mk.swapQ = ""; renderMake(); setTimeout(() => $("#mkSwapQ")?.focus(), 60); break;
+    case "mk-swap-cancel": mk.swap = null; mk.swapQ = ""; renderMake(); break;
+    case "mk-pick": {
+      const f = (p.foods || []).find((x) => x.id === t.dataset.id);
+      if (!f) break;
+      const it = mkFromSaved(f);
+      if (mk.swap >= 0) mk.items[mk.swap] = it; else mk.items.push(it);
+      mk.swap = null; mk.swapQ = ""; renderMake();
+      break;
+    }
+    case "mk-ask": mkAsk(); break;
+    case "mk-split": mkSplit(); break;
+    case "mk-log": mkLog(); break;
+    case "mk-save": saveMeal(mk.title, mk.meal, mk.items.map(mealItemFromMk)); break;
     case "local-to-claude": lbl = null; addState.local = false; addState.mode = "type"; runEstimate(false, { noLocal: true }); break;
     case "lbl-add": addFromLabels(); break;
     case "lbl-rm": lbl?.items.splice(Number(t.dataset.i), 1); renderAdd(); break;

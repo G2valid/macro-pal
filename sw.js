@@ -1,5 +1,5 @@
 // Offline cache for the app shell. Bump VERSION when files change.
-const VERSION = "macropal-v33";
+const VERSION = "macropal-v34";
 const SHELL = ["./", "index.html", "styles.css", "app.js", "ai.js", "manifest.json", "icons/icon.svg", "icons/apple-touch-icon.png", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png", "mealplan.js", "coaches.js", "coaches/whiskers.js", "coaches/bestie.js", "coaches/dj.js", "coaches/drill.js", "coaches/surfer.js", "coaches/ricky.js", "coaches/dad.js", "coaches/tom.js", "coaches/santa.js", "coaches/cupid.js", "coaches/bunny.js", "coaches/spooky.js", "planner.js", "triggers.js", "vendor/anthropic-sdk.js"];
 
 self.addEventListener("install", (e) => {

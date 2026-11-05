@@ -738,3 +738,32 @@ html:root[data-accent="synthwave"] body::after {
 .amt-btn:active { transform: scale(.94); }
 .entry-total:empty { display: none; }
 .link-btn { color: var(--accent); font-weight: 700; text-decoration: underline; padding: 0; font-size: inherit; }
+
+/* =========================================================
+   🍳 Make & adjust · ⭐ saved meals · quick picks
+   ========================================================= */
+.quick-picks { display: flex; gap: 6px; flex-wrap: wrap; margin: -2px 0 10px; }
+.qp {
+  padding: 6px 11px; border-radius: 999px; font-size: 13px; font-weight: 600; color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.qp:active { transform: scale(.96); }
+:root:not([data-glow="off"]) .qp { box-shadow: 0 0 10px var(--glow-soft); }
+.mk-item .hdr { margin-bottom: 6px; }
+.mk-item .hdr .grow { flex: 1; min-width: 0; font-size: 15px; }
+.mk-sw { padding: 5px 10px; font-size: 13px; }
+.mk-mac { color: var(--ink-2); text-align: right; }
+.mk-how { background: var(--surface); border-radius: 14px; padding: 10px 14px; margin-bottom: 12px; font-size: 14px; }
+.mk-how summary { font-weight: 700; cursor: pointer; color: var(--accent); }
+.mk-how p { margin: 6px 0 0; }
+.swap-panel { margin-top: 10px; padding: 12px; border-radius: 12px; background: var(--surface-2); }
+.swap-row { display: flex; gap: 8px; align-items: center; }
+.swap-row .input { flex: 1; min-width: 0; }
+.saved-meals { display: grid; gap: 6px; margin-bottom: 14px; }
+.sm-row { display: flex; gap: 6px; align-items: stretch; }
+.sm-row .food-item { flex: 1; min-width: 0; margin: 0; }
+.sm-x { width: 40px; flex: none; border-radius: 12px; background: var(--surface-2); color: var(--ink-3); font-size: 14px; }
+.link-btn.small { font-size: 13px; }
+.link-btn:disabled { opacity: .5; }
+.sm-row .food-item { background: var(--surface); border-radius: 12px; border: 0; }

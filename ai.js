@@ -374,6 +374,24 @@ Respect stated preferences and dislikes. Dietary needs (like gluten-free) are st
 Now and then (roughly one suggestion in four) include a trendy or viral recipe from social media food trends, adapted to fit the macros and dietary needs, and start its name with "🔥 ".
 Keep every text field short: one or two sentences.`;
 
+/** One ingredient with its amount and the macros for that amount. */
+const INGREDIENT = {
+  type: "object",
+  additionalProperties: false,
+  required: ["food", "amount", "calories", "protein_g", "carbs_g", "fat_g"],
+  properties: {
+    food: { type: "string" }, amount: { type: "string" }, calories: { type: "number" },
+    protein_g: { type: "number" }, carbs_g: { type: "number" }, fat_g: { type: "number" },
+  },
+};
+const ingredientOut = (i) => ({
+  name: i.food, portion: i.amount, kcal: Math.round(i.calories), p: round1(i.protein_g), c: round1(i.carbs_g), f: round1(i.fat_g),
+});
+const sumItems = (items) => items.reduce((t, x) => ({ kcal: t.kcal + x.kcal, p: t.p + x.p, c: t.c + x.c, f: t.f + x.f }), { kcal: 0, p: 0, c: 0, f: 0 });
+
+/** Small edits (swaps, splitting a meal into ingredients) use the basic, cheapest model. */
+export const QUICK_MODEL = "claude-haiku-5-5";
+
 const IDEAS_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -385,16 +403,12 @@ const IDEAS_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["name", "why", "portion", "calories", "protein_g", "carbs_g", "fat_g", "ingredients", "how"],
+        required: ["name", "why", "portion", "ingredients", "how"],
         properties: {
           name: { type: "string" },
           why: { type: "string" },
           portion: { type: "string" },
-          calories: { type: "number" },
-          protein_g: { type: "number" },
-          carbs_g: { type: "number" },
-          fat_g: { type: "number" },
-          ingredients: { type: "array", items: { type: "string" } },
+          ingredients: { type: "array", items: INGREDIENT },
           how: { type: "string" },
         },
       },
@@ -410,12 +424,13 @@ ${context}
 
 ${request ? `What I'm in the mood for: ${request}` : "Surprise me with a good mix."}
 
-Each idea should fit inside my remaining calories and help me close my protein gap. Give macros per portion as eaten.`;
+Each idea should fit inside my remaining calories and help me close my protein gap. List each idea's ingredients with everyday amounts (oz, g, cups, tbsp, pieces) and the macros for that amount, so I can adjust them.`;
   const data = await askClaude({ apiKey, model, system: COACH_SYSTEM, schema: IDEAS_SCHEMA, content: [{ type: "text", text }], what: "meal ideas" });
-  data.ideas = (data.ideas || []).map((i) => ({
-    name: i.name, why: i.why, portion: i.portion, ingredients: i.ingredients || [], how: i.how,
-    kcal: Math.round(i.calories), p: round1(i.protein_g), c: round1(i.carbs_g), f: round1(i.fat_g),
-  }));
+  data.ideas = (data.ideas || []).map((i) => {
+    const items = (i.ingredients || []).map(ingredientOut);
+    const t = sumItems(items);
+    return { name: i.name, why: i.why, portion: i.portion, items, how: i.how, kcal: Math.round(t.kcal), p: round1(t.p), c: round1(t.c), f: round1(t.f) };
+  });
   return data;
 }
 
@@ -500,12 +515,41 @@ Use exactly these meal names as slot. Give each meal a short appetizing title an
   const data = await askClaude({ apiKey, model, system: COACH_SYSTEM, schema: DAY_SCHEMA, content: [{ type: "text", text }], what: "example day" });
   data.meals = (data.meals || []).map((m) => {
     const items = (m.items || []).map((i) => ({
-      name: `${i.portion} ${i.food}`.trim(), kcal: Math.round(i.calories), p: Math.round(i.protein_g), c: Math.round(i.carbs_g), f: Math.round(i.fat_g),
+      name: `${i.portion} ${i.food}`.trim(), food: i.food, portion: i.portion, kcal: Math.round(i.calories), p: Math.round(i.protein_g), c: Math.round(i.carbs_g), f: Math.round(i.fat_g),
     }));
     const total = items.reduce((t, x) => ({ kcal: t.kcal + x.kcal, p: t.p + x.p, c: t.c + x.c, f: t.f + x.f }), { kcal: 0, p: 0, c: 0, f: 0 });
     return { slot: m.slot, title: m.title, items, total };
   });
   return data;
+}
+
+/* ---------- Editing a suggested meal ---------- */
+const SWAP_SCHEMA = {
+  type: "object", additionalProperties: false, required: ["item"],
+  properties: { item: INGREDIENT },
+};
+
+/** Replace one ingredient (index ≥ 0) or add one (index -1) in a meal. */
+export async function swapIngredient({ apiKey, model = QUICK_MODEL, meal, items, index, replacement, diet = [] }) {
+  const list = items.map((it, i) => `${i + 1}. ${[it.portion, it.name].filter(Boolean).join(" ")} (${Math.round(it.kcal)} kcal)`).join("\n");
+  const ask = index >= 0
+    ? `Replace ingredient ${index + 1} with: ${replacement}. Use the amount I gave; otherwise pick an amount that fills the same role in the meal (similar portion or calories).`
+    : `Add this to the meal: ${replacement}. Use the amount I gave, or a normal single portion.`;
+  const text = `Meal: ${meal}\nIngredients:\n${list}\n\n${ask}\nGive the food, its amount in everyday units, and the macros for that amount.${diet.length ? `\nDietary needs (strict): ${diet.join(", ")}.` : ""}`;
+  const d = await askClaude({ apiKey, model, system: COACH_SYSTEM, schema: SWAP_SCHEMA, content: [{ type: "text", text }], what: "swap", maxTokens: 4000, effort: "low" });
+  return ingredientOut(d.item);
+}
+
+const SPLIT_SCHEMA = {
+  type: "object", additionalProperties: false, required: ["ingredients"],
+  properties: { ingredients: { type: "array", items: INGREDIENT } },
+};
+
+/** Split one portion ("6 oz chicken + 1 cup rice", 520 kcal…) into ingredients whose macros add up to it. */
+export async function splitMeal({ apiKey, model = QUICK_MODEL, title, recipe, serving, kcal, p, c, f }) {
+  const text = `Meal: ${title}${recipe ? `\nRecipe: ${recipe}` : ""}\nMy portion: ${serving}\nIts totals: ${kcal} kcal, ${p} g protein, ${c} g carbs, ${f} g fat.\n\nList the ingredients in my portion with everyday amounts and the macros for each amount. They should add up to the totals above.`;
+  const d = await askClaude({ apiKey, model, system: COACH_SYSTEM, schema: SPLIT_SCHEMA, content: [{ type: "text", text }], what: "ingredient list", maxTokens: 6000, effort: "low" });
+  return (d.ingredients || []).map(ingredientOut);
 }
 
 function round1(n) {

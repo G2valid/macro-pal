@@ -215,7 +215,9 @@ export function buildExampleDay(targets, pattern = "3+1", diet = [], seed = 0) {
 function itemFor(fd, units) {
   const g = units * fd.unitG;
   const p = (fd.p * g) / 100, c = (fd.c * g) / 100, f = (fd.f * g) / 100;
-  return { name: portionText(fd, units), kcal: Math.round(p * 4 + c * 4 + f * 9), p: Math.round(p), c: Math.round(c), f: Math.round(f) };
+  const full = portionText(fd, units);
+  // food + portion separately too, so a meal can be adjusted ingredient by ingredient
+  return { name: full, food: fd.name, portion: fd.unit ? full.slice(0, full.length - fd.name.length).trim() : full, kcal: Math.round(p * 4 + c * 4 + f * 9), p: Math.round(p), c: Math.round(c), f: Math.round(f) };
 }
 
 function sum(list) {
