@@ -298,12 +298,15 @@ const LABEL_SCHEMA = {
 };
 
 /** Read a Nutrition Facts label (values per serving, as printed). */
-export async function readLabel({ apiKey, model, image }) {
+/** The basic, cheapest reader is plenty for a clear Nutrition Facts panel. */
+export const LABEL_MODEL = "claude-haiku-5-5";
+
+export async function readLabel({ apiKey, model = LABEL_MODEL, image, effort = "low" }) {
   const content = [
     { type: "image", source: { type: "base64", media_type: image.mediaType, data: image.base64 } },
     { type: "text", text: "Read this nutrition label." },
   ];
-  const d = await askClaude({ apiKey, model, system: LABEL_SYSTEM, schema: LABEL_SCHEMA, content, what: "label reading" });
+  const d = await askClaude({ apiKey, model, system: LABEL_SYSTEM, schema: LABEL_SCHEMA, content, what: "label reading", maxTokens: 4000, effort });
   if (!d.readable) throw new Error("Couldn't read that label. Try again with the whole panel flat, in focus and without glare.");
   return {
     name: d.product_name, servText: d.serving_size_text, servAmt: d.serving_amount || 0, servUnit: d.serving_unit || "",

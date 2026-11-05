@@ -1,4 +1,4 @@
-import { estimateFood, readFitnessScreens, suggestMeals, reviewEating, suggestExampleDay, readLabel, generatePlan, prepareImage, MODELS, DEFAULT_MODEL } from "./ai.js?v=11";
+import { estimateFood, readFitnessScreens, suggestMeals, reviewEating, suggestExampleDay, readLabel, generatePlan, prepareImage, MODELS, DEFAULT_MODEL, LABEL_MODEL } from "./ai.js?v=12";
 import { buildPlanPrompt, parsePlanReply, normalizePlan, groceryList, groceryText, fmtQty } from "./planner.js?v=1";
 import { buildExampleDay, mealBudgets, MEAL_PATTERNS } from "./mealplan.js?v=2";
 import { COACHES, DEFAULT_COACH, seasonalCoach, coachLine, guestChance, phaseLine, inSeason } from "./coaches.js?v=16";
@@ -79,6 +79,17 @@ const fromDispW = (v) => (imperial() ? v * LB : v);
 const fmtW = (kg, d = 1) => (kg == null ? "—" : `${toDispW(kg).toFixed(d)} ${wUnit()}`);
 const r0 = (n) => Math.round(n || 0);
 const r1 = (n) => Math.round((n || 0) * 10) / 10;
+const r2 = (n) => Math.round((n || 0) * 100) / 100;
+/** Leading amount of a portion like "6 oz", "1 1/2 cups", "2/3 cup", "0.5 bar". */
+function parseQty(str) {
+  const m = String(str ?? "").trim().match(/^(\d+)\s+(\d+)\/(\d+)|^(\d+)\/(\d+)|^(\d*\.?\d+)/);
+  if (!m) return null;
+  if (m[1]) return Number(m[1]) + Number(m[2]) / Number(m[3]);
+  if (m[4]) return Number(m[4]) / Number(m[5]);
+  return Number(m[6]);
+}
+const QTY_RE = /^\s*(\d+\s+\d+\/\d+|\d+\/\d+|\d*\.?\d+)/;
+const numQty = (q) => String(+q.toFixed(2));
 
 /* =========================================================
    Nutrition math
@@ -634,7 +645,7 @@ function renderSettings() {
 
     <div class="section-label">Claude (photos & screenshots)</div>
     <div class="list">
-      <button data-act="edit-ai"><span>✨ API key & model</span><span class="v">${state.apiKey ? "Connected ✓" : "Not set up"} ›</span></button>
+      <button data-act="edit-ai"><span>✨ API key & models</span><span class="v">${state.apiKey ? "Connected ✓" : "Not set up"} ›</span></button>
     </div>
 
     <div class="section-label">People on this device</div>
@@ -816,7 +827,7 @@ function openWeightSheet() {
 let addState = null;
 
 function openAdd(meal, text = "") {
-  addState = { meal: meal || defaultMeal(), mode: state.apiKey ? "type" : "foods", q: "" };
+  addState = { meal: meal || defaultMeal(), mode: text ? "type" : P().addMode || (state.apiKey ? "label" : "foods"), q: "", lq: "" };
   photo = { images: [], est: null, answers: {}, desc: text };
   lbl = null;
   renderAdd();
@@ -829,7 +840,7 @@ function mealPicker() {
 }
 
 function renderAdd() {
-  const modes = [["type", "✍️ Type it"], ["photo", "📷 Photo"], ["label", "🏷️ Label"], ["foods", "My foods"], ["quick", "Manual"]];
+  const modes = [["label", "🏷️ Label reader"], ["type", "✍️ Type it"], ["photo", "📷 Photo"], ["foods", "My foods"], ["quick", "Manual"]];
   let body = "";
   if (addState.mode === "type") body = typeBody();
   if (addState.mode === "photo") body = photoBody();
@@ -845,6 +856,7 @@ function renderAdd() {
   else $("#sheetBody").innerHTML = html;
   if (addState.mode === "foods") bindFoodSearch();
   if (addState.mode === "label") bindLabel();
+  if ((addState.mode === "photo" || addState.mode === "type") && photo?.est) bindAiItems();
   if (focusKey) $(`[data-fk="${focusKey}"]`)?.focus({ preventScroll: true });
   if (addState.mode === "type") {
     $("#photoDesc")?.addEventListener("keydown", (e) => {
@@ -887,7 +899,20 @@ function entryFields(e = {}) {
       <label class="field"><span style="color:var(--protein)">Protein g</span><input name="p" type="number" inputmode="decimal" step="0.1" min="0" value="${e.p ?? ""}"></label>
       <label class="field"><span style="color:var(--carbs)">Carbs g</span><input name="c" type="number" inputmode="decimal" step="0.1" min="0" value="${e.c ?? ""}"></label>
       <label class="field"><span style="color:var(--fat)">Fat g</span><input name="f" type="number" inputmode="decimal" step="0.1" min="0" value="${e.f ?? ""}"></label>
-    </div>`;
+    </div>
+    <div class="ai-total num entry-total"></div>`;
+}
+/** Live "you're logging" line, so changing servings or numbers shows the real total. */
+function bindEntryTotal(form) {
+  const el = form?.querySelector(".entry-total");
+  if (!el) return;
+  const upd = () => {
+    const e = readEntry(form);
+    const s = e.servings || 1;
+    el.innerHTML = `<span>${s !== 1 ? `${numQty(s)} servings =` : "You're logging"}</span><span>${r0(e.kcal * s)} kcal · P ${r0(e.p * s)} · C ${r0(e.c * s)} · F ${r0(e.f * s)}</span>`;
+  };
+  form.addEventListener("input", upd);
+  upd();
 }
 function readEntry(form) {
   const f = Object.fromEntries(new FormData(form));
@@ -903,6 +928,7 @@ function quickBody() {
     <button class="btn">Add</button></form>`;
 }
 function bindQuick() {
+  bindEntryTotal($("#quickForm"));
   $("#quickForm").addEventListener("submit", (e) => {
     e.preventDefault();
     const en = readEntry(e.target);
@@ -958,17 +984,75 @@ function knownFoodsText() {
 let lbl = null; // { items: [{ id, image, loading, error, data, amount, unit, foodId }], error }
 const MAX_LABELS = 8;
 
+/** "4 cookies (33g)" → { count: 4, unit: "cookies" }; null when the serving isn't a count of something. */
+function labelCount(servText = "") {
+  const m = String(servText).trim().match(/^(\d+\s+\d+\/\d+|\d+\/\d+|\d*\.?\d+)\s+([a-z][a-z.\- ]*?)\s*(?:\(|$)/i);
+  if (!m) return null;
+  const unit = m[2].trim().toLowerCase();
+  if (/^(g|grams?|oz|ounces?|ml|mls|fl\.? ?oz|servings?)$/.test(unit)) return null;
+  const count = parseQty(m[1]);
+  return count > 0 ? { count, unit } : null;
+}
+
 function labelUnits(d) {
   const u = [];
+  const pc = labelCount(d.servText);
   if (d.servAmt && d.servUnit) u.push(d.servUnit);
+  if (pc) u.push(pc.unit);
   if (d.servAmt && d.servUnit === "g") u.push("oz");
   u.push("servings");
   return u;
 }
 
+/** How many label servings an amount is, and back again. */
+function toServings(d, amount, unit) {
+  if (unit === "servings") return amount;
+  const pc = labelCount(d.servText);
+  if (pc && unit === pc.unit) return amount / pc.count;
+  if (!d.servAmt) return amount;
+  if (unit === "oz") return (amount * 28.3495) / d.servAmt;
+  return amount / d.servAmt; // g or ml
+}
+function fromServings(d, s, unit) {
+  if (unit === "servings") return r2(s);
+  const pc = labelCount(d.servText);
+  if (pc && unit === pc.unit) return r2(s * pc.count);
+  if (unit === "oz") return r1((s * d.servAmt) / 28.3495);
+  return r0(s * d.servAmt);
+}
+
 function labelMath(d, amount, unit) {
-  const factor = unit === "servings" ? amount : unit === "oz" ? (amount * 28.3495) / d.servAmt : amount / d.servAmt;
+  const factor = toServings(d, amount, unit);
   return { kcal: r0(d.kcal * factor), p: r1(d.p * factor), c: r1(d.c * factor), f: r1(d.f * factor) };
+}
+
+/** Basic reader (cheapest) unless Settings says otherwise; "smart" is the retry. */
+const labelReader = (smart = false) => (smart || state.labelModel === "main"
+  ? { model: state.model || DEFAULT_MODEL, effort: "medium" }
+  : { model: LABEL_MODEL, effort: "low" });
+
+function savedLabelItem(f) {
+  const L = f.label;
+  return lblItem({ foodId: f.id, unit: L.lastUnit || "", amount: L.lastAmount ?? "",
+    data: { name: f.name, servText: L.servText, servAmt: L.servAmt, servUnit: L.servUnit, kcal: f.kcal, p: f.p, c: f.c, f: f.f, fiber: L.fiber, allergens: L.allergens || "" } });
+}
+
+function savedLabelResults() {
+  const inList = new Set((lbl?.items || []).map((it) => it.foodId).filter(Boolean));
+  const q = (addState.lq || "").trim().toLowerCase();
+  let foods = (P().foods || []).filter((f) => f.label && !inList.has(f.id)).sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0));
+  if (q) foods = foods.filter((f) => f.name.toLowerCase().includes(q));
+  return foods.slice(0, 40).map((f) => `<button class="food-item" data-act="lbl-saved" data-id="${f.id}">
+      <div class="grow"><div class="nm">🏷️ ${esc(f.name)}</div><div class="sub num">per ${esc(f.label.servText || "serving")} · ${r0(f.kcal)} kcal · P ${r0(f.p)}${f.label.lastAmount ? ` · last time ${f.label.lastAmount} ${esc(f.label.lastUnit || "")}` : ""}</div></div>
+      <span class="plus-sm">+</span></button>`).join("") || `<div class="empty">${q ? "No matches." : "All your saved labels are in this meal."}</div>`;
+}
+function savedLabelsList() {
+  const n = (P().foods || []).filter((f) => f.label).length;
+  if (!n) return "";
+  return `<div class="saved-lbls">
+    <div class="sl-head"><b>⭐ Your saved labels</b><span class="small muted">tap to add · only the amount needed</span></div>
+    ${n > 6 ? `<input class="input search" id="lblSearch" type="search" placeholder="Search saved labels" value="${esc(addState.lq || "")}">` : ""}
+    <div class="food-list" id="lblSaved">${savedLabelResults()}</div></div>`;
 }
 
 const lblItem = (fields = {}) => ({ id: uid(), image: null, loading: false, error: null, data: null, amount: "", unit: "", foodId: null, ...fields });
@@ -983,23 +1067,30 @@ function labelCard(it, i) {
   if (!it.data) {
     return `<div class="ai-item lbl-card"><div class="lbl-row">${thumb}<div class="grow">
       <div class="note warn" style="margin:0 0 8px">${esc(it.error || "Couldn't read this label.")}</div>
-      <div class="lbl-actions">${it.image ? `<button class="chip" data-act="lbl-retry" data-i="${i}">Try again</button>` : ""}${rm}</div></div></div></div>`;
+      <div class="lbl-actions">${it.image ? `<button class="chip" data-act="lbl-retry" data-i="${i}">${state.labelModel === "main" ? "Try again" : "✨ Try the smarter reader"}</button>` : ""}${rm}</div></div></div></div>`;
   }
   const d = it.data;
   const units = labelUnits(d);
   if (!units.includes(it.unit)) it.unit = units[0];
-  if (it.amount === "") it.amount = it.unit === "servings" ? 1 : it.unit === "oz" ? r1(d.servAmt / 28.3495) : d.servAmt;
+  if (it.amount === "") it.amount = fromServings(d, 1, it.unit);
   const gfWarn = (P().diet || []).includes("Gluten-free") && /wheat|barley|rye|malt|gluten/i.test(d.allergens) && !/gluten[- ]free/i.test(d.allergens);
   return `<div class="ai-item lbl-card">
     <div class="lbl-row">${thumb}<div class="grow">
       <div class="hdr"><input class="input" data-lk="name" data-i="${i}" data-fk="name-${it.id}" maxlength="60" value="${esc(d.name)}" aria-label="Food name">${rm}</div>
-      <div class="small muted">Per ${esc(d.servText || "1 serving")} · <span class="num">${d.kcal} kcal · <span style="color:var(--protein)">P ${d.p}</span> · <span style="color:var(--carbs)">C ${d.c}</span> · <span style="color:var(--fat)">F ${d.f}</span></span></div>
+      <div class="small muted">Per ${esc(d.servText || "1 serving")} · <span class="num">${d.kcal} kcal · <span style="color:var(--protein)">P ${d.p}</span> · <span style="color:var(--carbs)">C ${d.c}</span> · <span style="color:var(--fat)">F ${d.f}</span></span> <button class="lbl-fix" data-act="lbl-fix" data-i="${i}">${it.editing ? "Done" : "✏️ Fix"}</button></div>
       ${d.allergens ? `<div class="small muted" style="margin-top:2px">${esc(d.allergens)}</div>` : ""}
     </div></div>
     ${gfWarn ? `<div class="note warn" style="margin:8px 0 0">⚠️ This label lists a gluten source (${esc(d.allergens)}).</div>` : ""}
-    <div class="row2" style="align-items:end;margin-top:10px">
-      <label class="field" style="margin:0"><span>How much did you have?</span><input class="input num" data-lk="amt" data-i="${i}" data-fk="amt-${it.id}" type="number" inputmode="decimal" step="any" min="0" value="${it.amount}" style="font-size:20px;font-weight:700"></label>
-      <div class="seg" style="margin:0">${units.map((u) => `<button class="${it.unit === u ? "on" : ""}" data-act="lbl-unit" data-i="${i}" data-v="${u}">${u}</button>`).join("")}</div>
+    ${it.editing ? `<div class="lbl-edit">
+      <div class="small muted" style="margin:8px 0 4px">Per serving, as printed on the label:</div>
+      <div class="row4">${[["kcal", "kcal"], ["p", "Protein"], ["c", "Carbs"], ["f", "Fat"]].map(([k, l]) => `<label>${l}<input class="input num" data-lk="${k}" data-i="${i}" data-fk="${k}-${it.id}" type="number" inputmode="decimal" step="any" value="${d[k]}"></label>`).join("")}</div>
+      <div class="row2" style="margin-top:6px"><label class="field" style="margin:0"><span>Serving size</span><input class="input" data-lk="servText" data-i="${i}" data-fk="st-${it.id}" value="${esc(d.servText || "")}" placeholder="4 cookies (33g)"></label>
+        <label class="field" style="margin:0"><span>Grams per serving</span><input class="input num" data-lk="servAmt" data-i="${i}" data-fk="sa-${it.id}" type="number" inputmode="decimal" step="any" value="${d.servAmt || ""}"></label></div>
+    </div>` : ""}
+    <div class="field-label" style="margin-top:10px">How much did you have?</div>
+    <div class="lbl-amt">
+      <input class="input num" data-lk="amt" data-i="${i}" data-fk="amt-${it.id}" type="number" inputmode="decimal" step="any" min="0" value="${it.amount}" aria-label="Amount">
+      <div class="seg">${units.map((u) => `<button class="${it.unit === u ? "on" : ""}" data-act="lbl-unit" data-i="${i}" data-v="${esc(u)}">${esc(u)}</button>`).join("")}</div>
     </div>
     ${!d.servAmt ? `<p class="hint" style="margin:6px 0 0">No gram amount on this label, so enter servings.</p>` : ""}
     <div class="lbl-sub num" data-lt="${i}"></div>
@@ -1009,18 +1100,24 @@ function labelCard(it, i) {
 function labelBody() {
   if (!lbl) lbl = { items: [] };
   if (!lbl.items.length) {
-    if (!state.apiKey) return `<div class="note">Reading labels uses Claude. Add your Anthropic API key once in <b>Settings → API key</b>.</div><button class="btn" data-act="edit-ai">Set up Claude</button>`;
-    return `<button class="photo-drop" data-act="pick-label"><span class="cam">🏷️</span><b>Snap or choose labels</b><span class="small">Several in one meal? Pick them all at once, one label per photo. Lay each flat, fill the frame, avoid glare.</span></button>
-      ${lbl.error ? `<br><div class="note warn">${esc(lbl.error)}</div>` : ""}
-      <p class="small muted" style="text-align:center;margin-top:10px">Labels you scan are saved to My foods, so next time you only type the weight.</p>`;
+    const saved = savedLabelsList();
+    const scan = !state.apiKey
+      ? `<div class="note">Reading new labels uses Claude. Add your Anthropic API key once in <b>Settings → Claude</b>.</div><button class="btn" data-act="edit-ai" style="margin-bottom:14px">Set up Claude</button>`
+      : (saved
+        ? `<button class="btn" data-act="pick-label" style="margin-bottom:14px">📷 Scan new label(s)</button>`
+        : `<button class="photo-drop" data-act="pick-label"><span class="cam">🏷️</span><b>Snap or choose labels</b><span class="small">Several in one meal? Pick them all at once, one label per photo.</span></button>`)
+        + (lbl.error ? `<div class="note warn">${esc(lbl.error)}</div>` : "");
+    return `${scan}${saved || `<p class="small muted" style="text-align:center;margin-top:10px">Every label you scan is saved here, so next time you just tap it and enter the amount.</p>`}`;
   }
   const ready = lblReady();
   const busy = lbl.items.some((it) => it.loading);
   const n = ready.length;
+  const saved = savedLabelsList();
   return `${lbl.items.map(labelCard).join("")}
-    ${lbl.items.length < MAX_LABELS && state.apiKey ? `<button class="btn secondary" data-act="pick-label" style="margin-bottom:10px">＋ Add another label</button>` : ""}
+    ${lbl.items.length < MAX_LABELS && state.apiKey ? `<button class="btn secondary" data-act="pick-label" style="margin-bottom:10px">📷 Scan another label</button>` : ""}
     ${n ? `<div class="ai-total num" id="lblTotal"></div>` : ""}
-    <button class="btn sticky-add" data-act="lbl-add" ${busy || !n ? "disabled" : ""}>${busy ? "Reading labels…" : `Add ${n > 1 ? `all ${n} ` : ""}to ${addState.meal}`}</button>`;
+    <button class="btn sticky-add" data-act="lbl-add" ${busy || !n ? "disabled" : ""}>${busy ? "Reading labels…" : `Add ${n > 1 ? `all ${n} ` : ""}to ${addState.meal}`}</button>
+    ${saved ? `<div style="margin-top:16px">${saved}</div>` : ""}`;
 }
 
 function bindLabel() {
@@ -1039,8 +1136,14 @@ function bindLabel() {
   document.querySelectorAll("[data-lk]").forEach((inp) => inp.addEventListener("input", () => {
     const it = lbl.items[Number(inp.dataset.i)];
     if (!it?.data) return;
-    if (inp.dataset.lk === "amt") { it.amount = inp.value; upd(); } else it.data.name = inp.value;
+    const k = inp.dataset.lk;
+    if (k === "amt") it.amount = inp.value;
+    else if (k === "name" || k === "servText") it.data[k] = inp.value;
+    else it.data[k] = Number(inp.value) || 0;
+    upd();
   }));
+  const s = $("#lblSearch");
+  s?.addEventListener("input", () => { addState.lq = s.value; $("#lblSaved").innerHTML = savedLabelResults(); });
   upd();
 }
 
@@ -1054,9 +1157,9 @@ async function pool(items, n, fn) {
 
 const labelChanged = (mine) => addState && lbl === mine && addState.mode === "label" && renderAdd();
 
-async function readOneLabel(it, mine) {
+async function readOneLabel(it, mine, smart = false) {
   try {
-    it.data = await readLabel({ apiKey: state.apiKey, model: state.model || DEFAULT_MODEL, image: it.image });
+    it.data = await readLabel({ apiKey: state.apiKey, image: it.image, ...labelReader(smart) });
   } catch (err) {
     it.error = err.message;
   }
@@ -1149,7 +1252,6 @@ function photoBody() {
       <button class="btn" data-act="run-estimate">${photo.images.length ? `Estimate this meal${photo.images.length > 1 ? ` (${photo.images.length} photos)` : ""}` : "Estimate from description"}</button>`;
   }
   const est = photo.est;
-  const tot = est.items.reduce((t, i) => ({ kcal: t.kcal + i.kcal, p: t.p + i.p, c: t.c + i.c, f: t.f + i.f }), { kcal: 0, p: 0, c: 0, f: 0 });
   return `${photo.images.length ? photoThumbs(false, true) : ""}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b>Claude's estimate</b><span class="badge">${esc(est.confidence)} confidence</span></div>
     ${est.notes ? `<div class="note">${esc(est.notes)}</div>` : ""}
@@ -1159,29 +1261,78 @@ function photoBody() {
         <div class="chips">${q.options.map((o) => `<button class="chip ${photo.answers[qi] === o ? "on" : ""}" data-act="answer" data-q="${qi}" data-v="${esc(o)}">${esc(o)}</button>`).join("")}</div>
         <input class="input" data-q-text="${qi}" placeholder="Or type an answer" value="${esc(q.options.includes(photo.answers[qi]) ? "" : photo.answers[qi] || "")}"></div>`).join("")}
       <button class="btn secondary" data-act="refine" style="margin-bottom:14px">Update estimate with my answers</button>` : ""}
-    <div id="aiItems">${est.items.map((it, i) => `<div class="ai-item" data-i="${i}">
+    <div id="aiItems">${est.items.map((it, i) => { const s = scaled(it); return `<div class="ai-item" data-i="${i}">
         <div class="hdr"><input class="input" data-k="name" value="${esc(it.name)}" aria-label="Food name"><button class="rm" data-act="ai-rm" data-i="${i}">Remove</button></div>
-        <div class="small muted" style="margin-bottom:6px">${esc(it.portion)}</div>
+        <div class="amt-row">
+          <button class="amt-btn" data-act="ai-amt" data-i="${i}" data-d="-1" aria-label="Less">−</button>
+          <input class="input" data-k="portion" data-fk="portion-${i}" value="${esc(it.portion)}" aria-label="How much">
+          <button class="amt-btn" data-act="ai-amt" data-i="${i}" data-d="1" aria-label="More">+</button>
+        </div>
         <div class="row4">
-          <label>kcal<input class="input num" data-k="kcal" type="number" inputmode="decimal" value="${it.kcal}"></label>
-          <label style="color:var(--protein)">Protein<input class="input num" data-k="p" type="number" inputmode="decimal" value="${it.p}"></label>
-          <label style="color:var(--carbs)">Carbs<input class="input num" data-k="c" type="number" inputmode="decimal" value="${it.c}"></label>
-          <label style="color:var(--fat)">Fat<input class="input num" data-k="f" type="number" inputmode="decimal" value="${it.f}"></label>
-        </div></div>`).join("") || `<div class="empty">No food found. Try another photo or add a description.</div>`}</div>
-    ${est.items.length ? `<div class="ai-total num"><span>Total</span><span>${r0(tot.kcal)} kcal · P ${r0(tot.p)} · C ${r0(tot.c)} · F ${r0(tot.f)}</span></div>
+          <label>kcal<input class="input num" data-k="kcal" data-fk="kcal-${i}" type="number" inputmode="decimal" value="${s.kcal}"></label>
+          <label style="color:var(--protein)">Protein<input class="input num" data-k="p" data-fk="p-${i}" type="number" inputmode="decimal" value="${s.p}"></label>
+          <label style="color:var(--carbs)">Carbs<input class="input num" data-k="c" data-fk="c-${i}" type="number" inputmode="decimal" value="${s.c}"></label>
+          <label style="color:var(--fat)">Fat<input class="input num" data-k="f" data-fk="f-${i}" type="number" inputmode="decimal" value="${s.f}"></label>
+        </div></div>`; }).join("") || `<div class="empty">No food found. Try another photo or add a description.</div>`}</div>
+    ${est.items.length ? `<p class="hint" style="margin:-2px 2px 8px">Change an amount (or tap − / +) and the calories and macros update.</p>
+    <div class="ai-total num" id="aiTotal"></div>
     <button class="btn sticky-add" data-act="ai-add">Add ${est.items.length > 1 ? `all ${est.items.length} items` : "to log"}</button>` : ""}
     <button class="btn secondary" data-act="ai-reset">Start over</button>`;
 }
 
-function syncAiEdits() {
-  if (!photo?.est) return;
+/** Claude's items keep their numbers for the portion Claude saw (base); mult scales them. */
+function normEst(est) {
+  est.items = (est.items || []).map((it) => ({
+    name: it.name, portion: it.portion, basePortion: it.portion, baseQty: parseQty(it.portion), mult: 1,
+    base: { kcal: it.kcal, p: it.p, c: it.c, f: it.f },
+  }));
+  return est;
+}
+const scaled = (it) => ({ kcal: r0(it.base.kcal * it.mult), p: r1(it.base.p * it.mult), c: r1(it.base.c * it.mult), f: r1(it.base.f * it.mult) });
+
+function aiTotal() {
+  const el = $("#aiTotal");
+  if (!el || !photo?.est) return;
+  const t = photo.est.items.map(scaled).reduce((s, i) => ({ kcal: s.kcal + i.kcal, p: s.p + i.p, c: s.c + i.c, f: s.f + i.f }), { kcal: 0, p: 0, c: 0, f: 0 });
+  el.innerHTML = `<span>Total</span><span>${r0(t.kcal)} kcal · P ${r0(t.p)} · C ${r0(t.c)} · F ${r0(t.f)}</span>`;
+}
+
+function bindAiItems() {
   document.querySelectorAll("#aiItems .ai-item").forEach((el) => {
     const it = photo.est.items[Number(el.dataset.i)];
-    el.querySelectorAll("[data-k]").forEach((inp) => {
-      const k = inp.dataset.k;
-      it[k] = k === "name" ? inp.value : Number(inp.value) || 0;
+    const showNums = () => {
+      const s = scaled(it);
+      for (const k of ["kcal", "p", "c", "f"]) el.querySelector(`[data-k="${k}"]`).value = s[k];
+    };
+    el.querySelector('[data-k="name"]').addEventListener("input", (e) => (it.name = e.target.value));
+    el.querySelector('[data-k="portion"]').addEventListener("input", (e) => {
+      it.portion = e.target.value;
+      const q = parseQty(it.portion);
+      if (q && it.baseQty) { it.mult = q / it.baseQty; showNums(); aiTotal(); }
     });
+    for (const k of ["kcal", "p", "c", "f"]) {
+      el.querySelector(`[data-k="${k}"]`).addEventListener("input", (e) => { it.base[k] = (Number(e.target.value) || 0) / (it.mult || 1); aiTotal(); });
+    }
   });
+  aiTotal();
+}
+
+/** − / + on an item: step the number in its portion ("6 oz" → "7 oz"), or multiply ("1.5 × half a burrito"). */
+function stepAiItem(it, dir) {
+  const cur = parseQty(it.portion);
+  if (cur && it.baseQty && QTY_RE.test(it.portion)) {
+    const step = cur <= 1 ? 0.25 : cur < 4 ? 0.5 : cur < 20 ? 1 : cur < 100 ? 5 : 10;
+    const next = Math.max(step, r2(cur + dir * step));
+    it.portion = it.portion.replace(QTY_RE, (m) => m.replace(m.trim(), numQty(next)));
+    it.mult = next / it.baseQty;
+  } else {
+    it.mult = Math.max(0.5, r2((it.mult || 1) + dir * 0.5));
+    it.portion = it.mult === 1 ? it.basePortion : `${numQty(it.mult)} × ${it.basePortion}`;
+  }
+}
+
+function syncAiEdits() {
+  if (!photo?.est) return;
   document.querySelectorAll("[data-q-text]").forEach((inp) => {
     if (inp.value.trim()) photo.answers[Number(inp.dataset.qText)] = inp.value.trim();
   });
@@ -1196,7 +1347,7 @@ async function runEstimate(refine = false) {
     syncAiEdits();
     answers = photo.est.questions.map((q, i) => ({ question: q.question, answer: photo.answers[i] })).filter((a) => a.answer);
     if (!answers.length) return toast("Answer at least one question first.");
-    previous = photo.est;
+    previous = { items: photo.est.items.map((it) => ({ name: it.name, portion: it.portion, ...scaled(it) })) };
   }
   photo.loading = true; photo.error = null;
   const keepEst = photo.est;
@@ -1207,7 +1358,7 @@ async function runEstimate(refine = false) {
       images: photo.images, description: photo.desc, answers, previous, diet: P().diet || [], known: photo.images.length ? "" : knownFoodsText(),
     });
     if (!photo) return; // sheet was closed
-    photo.est = est; photo.answers = {};
+    photo.est = normEst(est); photo.answers = {};
   } catch (err) {
     if (!photo) return;
     photo.error = err.message;
@@ -1231,6 +1382,7 @@ function openEditEntry(id) {
       <button class="btn">Save</button>
       <button class="btn danger" type="button" data-act="del-entry" data-id="${id}">Delete</button>
     </form>`);
+  bindEntryTotal($("#editForm"));
   $("#editForm").addEventListener("submit", (ev) => {
     ev.preventDefault();
     Object.assign(e, readEntry(ev.target), { meal: ev.target.meal.value });
@@ -1385,11 +1537,15 @@ function saveCoach() {
 }
 
 function openAiSettings() {
-  openSheet(`${sheetTitle("Photo estimates")}
-    <div class="note small">Photo estimates send your picture to Claude (Anthropic) for analysis. You'll need an API key from <b>console.anthropic.com</b> → API Keys. Each photo costs roughly a few cents. Setting a monthly spend limit in the console is a good idea.</div>
+  openSheet(`${sheetTitle("Claude")}
+    <div class="note small">Reading labels, typing a meal and photo estimates send your words or picture to Claude (Anthropic). They're paid from the API credits on your key from <b>console.anthropic.com</b> → API Keys, not your Claude app subscription. Setting a monthly spend limit in the console is a good idea.</div>
     <form id="aiForm">
       <label class="field"><span>Anthropic API key</span><input name="key" type="password" autocomplete="off" placeholder="sk-ant-…" value="${esc(state.apiKey)}"></label>
-      <label class="field"><span>Model</span><select name="model">${MODELS.map((m) => `<option value="${m.id}" ${(state.model || DEFAULT_MODEL) === m.id ? "selected" : ""}>${m.label}</option>`).join("")}</select></label>
+      <label class="field"><span>Model for typed meals, photos & coaching</span><select name="model">${MODELS.map((m) => `<option value="${m.id}" ${(state.model || DEFAULT_MODEL) === m.id ? "selected" : ""}>${m.label}</option>`).join("")}</select></label>
+      <label class="field"><span>🏷️ Label reader</span><select name="labelModel">
+        <option value="basic" ${state.labelModel !== "main" ? "selected" : ""}>Basic: Claude Haiku 5.5 (about 0.05¢ a label)</option>
+        <option value="main" ${state.labelModel === "main" ? "selected" : ""}>Same model as above</option></select></label>
+      <p class="hint" style="margin-top:-6px">A clear Nutrition Facts panel only needs the basic reader. If it ever can't read one, tap "Try the smarter reader".</p>
       <p class="hint">The key is saved only on this device and shared by everyone who uses it here.</p>
       <button class="btn">Save</button>
       ${state.apiKey ? `<button class="btn danger" type="button" data-act="clear-key">Remove key</button>` : ""}
@@ -1398,7 +1554,8 @@ function openAiSettings() {
     e.preventDefault();
     state.apiKey = e.target.key.value.trim();
     state.model = e.target.model.value;
-    save(); closeSheet(); render(); toast(state.apiKey ? "Photo estimates ready" : "Saved");
+    state.labelModel = e.target.labelModel.value;
+    save(); closeSheet(); render(); toast(state.apiKey ? "Claude is ready" : "Saved");
   });
 }
 
@@ -3086,17 +3243,22 @@ document.addEventListener("click", (ev) => {
     case "coach-review": openReview(false); break;
     case "review-again": runReview(); break;
     case "pick-meal": addState.meal = v; renderAdd(); break;
-    case "add-mode": syncAiEdits(); addState.mode = v; renderAdd(); break;
+    case "add-mode": syncAiEdits(); addState.mode = v; P().addMode = v; save(); renderAdd(); break;
     case "pick-label": $("#labelInput").click(); break;
     case "lbl-unit": {
       const it = lbl?.items[Number(t.dataset.i)];
       if (!it?.data) break;
-      const n = Number(it.amount) || 0;
-      if (it.unit === "g" && v === "oz") it.amount = r1(n / 28.3495);
-      else if (it.unit === "oz" && v === "g") it.amount = r0(n * 28.3495);
-      else if (v === "servings") it.amount = it.unit === "servings" ? n : r1((it.unit === "oz" ? n * 28.3495 : n) / it.data.servAmt);
-      else if (it.unit === "servings") it.amount = r0(n * it.data.servAmt * (v === "oz" ? 1 / 28.3495 : 1));
+      it.amount = fromServings(it.data, toServings(it.data, Number(it.amount) || 0, it.unit), v);
       it.unit = v; renderAdd();
+      break;
+    }
+    case "lbl-fix": { const it = lbl?.items[Number(t.dataset.i)]; if (it) { it.editing = !it.editing; renderAdd(); } break; }
+    case "lbl-saved": {
+      const f = p.foods.find((x) => x.id === t.dataset.id);
+      if (!f?.label) break;
+      if (!lbl) lbl = { items: [] };
+      if (lbl.items.length >= MAX_LABELS) { toast(`Up to ${MAX_LABELS} labels at a time.`); break; }
+      lbl.items.push(savedLabelItem(f)); renderAdd();
       break;
     }
     case "lbl-add": addFromLabels(); break;
@@ -3105,17 +3267,15 @@ document.addEventListener("click", (ev) => {
       const it = lbl?.items[Number(t.dataset.i)];
       if (!it?.image) break;
       it.loading = true; it.error = null; renderAdd();
-      readOneLabel(it, lbl);
+      readOneLabel(it, lbl, true);
       break;
     }
     case "add-food": {
       const f = p.foods.find((x) => x.id === t.dataset.id);
       if (!f) break;
       if (f.label) {
-        const L = f.label;
         if (!lbl) lbl = { items: [] };
-        lbl.items.push(lblItem({ foodId: f.id, unit: L.lastUnit || "", amount: L.lastAmount ?? "",
-          data: { name: f.name, servText: L.servText, servAmt: L.servAmt, servUnit: L.servUnit, kcal: f.kcal, p: f.p, c: f.c, f: f.f, fiber: L.fiber, allergens: L.allergens || "" } }));
+        lbl.items.push(savedLabelItem(f));
         addState.mode = "label"; renderAdd();
         break;
       }
@@ -3136,11 +3296,12 @@ document.addEventListener("click", (ev) => {
       break;
     }
     case "ai-rm": syncAiEdits(); photo.est.items.splice(Number(t.dataset.i), 1); renderAdd(); break;
+    case "ai-amt": { const it = photo?.est?.items[Number(t.dataset.i)]; if (it) { syncAiEdits(); stepAiItem(it, Number(t.dataset.d)); renderAdd(); } break; }
     case "ai-reset": photo = addState?.mode === "type" ? { images: [], est: null, answers: {}, desc: photo?.desc || "" } : null; renderAdd(); break;
     case "ai-add": {
       syncAiEdits();
       const meal = addState.meal;
-      photo.est.items.forEach((it) => addEntry({ name: it.name || "Food", portion: it.portion, kcal: r0(it.kcal), p: r1(it.p), c: r1(it.c), f: r1(it.f), servings: 1 }, { ai: true }));
+      photo.est.items.forEach((it) => addEntry({ name: (it.name || "Food").trim(), portion: it.portion, ...scaled(it), servings: 1 }, { ai: true }));
       photo = null; closeSheet(); render(); toast(`Added to ${meal}`);
       break;
     }
