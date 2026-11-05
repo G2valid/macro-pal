@@ -39,7 +39,7 @@ export function buildPlanPrompt({ startYmd, people, slots, notes, staples = "" }
     "- About one meal in four should be a trendy or viral recipe from social media food trends, adapted to our macros; start its title with \"🔥 \".",
     "- Each person's portion should land within about 10% of their per-meal numbers.",
     notes ? `- Also: ${notes}` : "",
-    staples ? `- We already buy these products. Work them in where they fit, and use these exact numbers (scaled to the portion) for them:\n${staples}` : "",
+    staples ? `- For reference only, products we already buy (exact nutrition per serving). Use them only where they fit naturally and keep the week varied; when a meal uses one, use these numbers scaled to the portion:\n${staples}` : "",
     "",
     "Reply with ONLY a JSON code block in exactly this shape (no other text):",
     "```json",

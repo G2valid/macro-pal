@@ -1,5 +1,5 @@
 import { estimateFood, readFitnessScreens, suggestMeals, reviewEating, suggestExampleDay, readLabel, generatePlan, prepareImage, MODELS, DEFAULT_MODEL, LABEL_MODEL } from "./ai.js?v=12";
-import { buildPlanPrompt, parsePlanReply, normalizePlan, groceryList, groceryText, fmtQty } from "./planner.js?v=2";
+import { buildPlanPrompt, parsePlanReply, normalizePlan, groceryList, groceryText, fmtQty } from "./planner.js?v=3";
 import { buildExampleDay, mealBudgets, MEAL_PATTERNS } from "./mealplan.js?v=2";
 import { COACHES, DEFAULT_COACH, seasonalCoach, coachLine, guestChance, phaseLine, inSeason } from "./coaches.js?v=16";
 import { TRIGGER_META, LINE_ID, FALLBACK, T } from "./triggers.js?v=6";
@@ -1748,9 +1748,9 @@ function todayContext() {
 }
 
 /** Products the user keeps, with exact numbers, so suggestions can use them. */
-function pantryLine(limit = 25) {
+function pantryLine(limit = 15) {
   const list = knownFoodsText(limit);
-  return list ? `Foods I keep, with exact nutrition per serving (work these in where they fit, scale them to the portion, and use these numbers instead of estimating):\n${list}` : "";
+  return list ? `For reference only, foods I've saved with exact nutrition per serving. You don't need to use them, so keep ideas varied; if an idea includes one, use these numbers scaled to the portion:\n${list}` : "";
 }
 
 function weekContext() {
@@ -2149,7 +2149,7 @@ function currentPlanPrompt() {
     const k = (f.name || "").trim().toLowerCase();
     if (k && (!seen.has(k) || f.label)) seen.set(k, f);
   }
-  return { slots, startYmd: planStart(), people: planPeople(), notes: h.notes, staples: knownFoodsText(30, [...seen.values()]) };
+  return { slots, startYmd: planStart(), people: planPeople(), notes: h.notes, staples: knownFoodsText(20, [...seen.values()]) };
 }
 
 async function copyPlanRequest() {
