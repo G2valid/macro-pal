@@ -15,7 +15,7 @@ export function planDates(startYmd) {
  * people: [{ name, kcal, protein, carbs, fat, diet: [], prefs }]
  * budgets: per-person list of { name, share } meal slots (same slots for everyone)
  */
-export function buildPlanPrompt({ startYmd, people, slots, notes }) {
+export function buildPlanPrompt({ startYmd, people, slots, notes, staples = "" }) {
   const dates = planDates(startYmd);
   const label = (s) => new Date(...s.split("-").map((n, i) => (i === 1 ? n - 1 : +n))).toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
   const diets = [...new Set(people.flatMap((p) => p.diet || []))];
@@ -39,6 +39,7 @@ export function buildPlanPrompt({ startYmd, people, slots, notes }) {
     "- About one meal in four should be a trendy or viral recipe from social media food trends, adapted to our macros; start its title with \"🔥 \".",
     "- Each person's portion should land within about 10% of their per-meal numbers.",
     notes ? `- Also: ${notes}` : "",
+    staples ? `- We already buy these products. Work them in where they fit, and use these exact numbers (scaled to the portion) for them:\n${staples}` : "",
     "",
     "Reply with ONLY a JSON code block in exactly this shape (no other text):",
     "```json",

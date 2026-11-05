@@ -1,5 +1,5 @@
 import { estimateFood, readFitnessScreens, suggestMeals, reviewEating, suggestExampleDay, readLabel, generatePlan, prepareImage, MODELS, DEFAULT_MODEL, LABEL_MODEL } from "./ai.js?v=12";
-import { buildPlanPrompt, parsePlanReply, normalizePlan, groceryList, groceryText, fmtQty } from "./planner.js?v=1";
+import { buildPlanPrompt, parsePlanReply, normalizePlan, groceryList, groceryText, fmtQty } from "./planner.js?v=2";
 import { buildExampleDay, mealBudgets, MEAL_PATTERNS } from "./mealplan.js?v=2";
 import { COACHES, DEFAULT_COACH, seasonalCoach, coachLine, guestChance, phaseLine, inSeason } from "./coaches.js?v=16";
 import { TRIGGER_META, LINE_ID, FALLBACK, T } from "./triggers.js?v=6";
@@ -827,7 +827,7 @@ function openWeightSheet() {
 let addState = null;
 
 function openAdd(meal, text = "") {
-  addState = { meal: meal || defaultMeal(), mode: text ? "type" : P().addMode || (state.apiKey ? "label" : "foods"), q: "", lq: "" };
+  addState = { meal: meal || defaultMeal(), mode: text ? "type" : P().addMode || (state.apiKey ? "label" : "foods"), q: "" };
   photo = { images: [], est: null, answers: {}, desc: text };
   lbl = null;
   renderAdd();
@@ -854,8 +854,7 @@ function renderAdd() {
   const focusKey = document.activeElement?.dataset?.fk;
   if ($("#sheet").hidden) openSheet(html, () => (addState = null));
   else $("#sheetBody").innerHTML = html;
-  if (addState.mode === "foods") bindFoodSearch();
-  if (addState.mode === "label") bindLabel();
+  if (addState.mode === "foods" || addState.mode === "label") { bindFoodSearch(); bindLabel(); }
   if ((addState.mode === "photo" || addState.mode === "type") && photo?.est) bindAiItems();
   if (focusKey) $(`[data-fk="${focusKey}"]`)?.focus({ preventScroll: true });
   if (addState.mode === "type") {
@@ -866,21 +865,39 @@ function renderAdd() {
   if (addState.mode === "quick") bindQuick();
 }
 
+/** Saved foods, one per name (a scanned label wins over an older estimate), most recently used first. */
+function savedFoods() {
+  const seen = new Map();
+  const all = [...(P().foods || [])].sort((a, b) => (b.label ? 1 : 0) - (a.label ? 1 : 0) || (b.lastUsed || 0) - (a.lastUsed || 0));
+  for (const f of all) {
+    const k = (f.name || "").trim().toLowerCase();
+    if (k && !seen.has(k)) seen.set(k, f);
+  }
+  return [...seen.values()].sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0));
+}
+
 function foodsBody() {
-  return `<input class="input search" id="foodSearch" type="search" placeholder="Search your foods" value="${esc(addState.q)}">
+  if (!lbl) lbl = { items: [] };
+  const has = lbl.items.length > 0;
+  return `${addState.local ? `<div class="note">✨ All found in your saved foods, so no Claude needed (free). Check the amounts. <button class="link-btn" data-act="local-to-claude">Ask Claude instead</button></div>` : ""}
+    ${plateHtml()}
+    ${has ? `<div class="sl-head" style="margin-top:16px"><b>Add more</b></div>` : ""}
+    <input class="input search" id="foodSearch" type="search" placeholder="Search your foods" value="${esc(addState.q)}">
     <div id="foodResults">${foodResults()}</div>`;
 }
 function foodResults() {
-  const p = P();
-  const q = addState.q.trim().toLowerCase();
-  let foods = [...(p.foods || [])];
-  foods.sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0));
+  const inPlate = new Set((lbl?.items || []).map((it) => it.foodId).filter(Boolean));
+  const q = (addState.q || "").trim().toLowerCase();
+  let foods = savedFoods().filter((f) => !inPlate.has(f.id));
   if (q) foods = foods.filter((f) => f.name.toLowerCase().includes(q));
-  if (!foods.length) return `<div class="empty">${q ? "No matches." : "Foods you log are saved here for one-tap adding."}</div>`;
-  return `<div class="food-list">${foods.slice(0, 60).map((f) => `
-    <button class="food-item" data-act="add-food" data-id="${f.id}">
-      <div class="grow"><div class="nm">${f.label ? "🏷️ " : ""}${esc(f.name)}</div><div class="sub num">${f.label ? "per " : ""}${f.portion ? esc(f.portion) + " · " : ""}${r0(f.kcal)} kcal · P ${r0(f.p)} · C ${r0(f.c)} · F ${r0(f.f)}</div></div>
-      <span class="plus-sm">+</span></button>`).join("")}</div>`;
+  if (!foods.length) return `<div class="empty">${q ? "No matches." : (P().foods || []).length ? "Everything's on your plate already." : "Labels you scan and foods you log are saved here. Pick one, set the amount, done."}</div>`;
+  return `<div class="food-list">${foods.slice(0, 60).map((f) => {
+    const serv = f.label?.servText || f.portion || "1 serving";
+    const lastA = f.label ? f.label.lastAmount : f.lastAmount, lastU = f.label ? f.label.lastUnit : f.lastUnit;
+    return `<button class="food-item" data-act="lbl-saved" data-id="${f.id}">
+      <div class="grow"><div class="nm">${f.label ? "🏷️" : "⭐"} ${esc(f.name)}</div><div class="sub num">per ${esc(serv)} · ${r0(f.kcal)} kcal · P ${r0(f.p)} · C ${r0(f.c)} · F ${r0(f.f)}${lastA ? ` · last time ${lastA} ${esc(lastU || "")}` : ""}</div></div>
+      <span class="plus-sm">+</span></button>`;
+  }).join("")}</div>`;
 }
 function bindFoodSearch() {
   const s = $("#foodSearch");
@@ -953,10 +970,12 @@ function addEntry(en, { saveFood = true, ai = false } = {}) {
 function rememberFood(en) {
   const p = P();
   p.foods ||= [];
-  const key = en.name.toLowerCase();
-  let f = p.foods.find((x) => x.name.toLowerCase() === key && (x.portion || "") === (en.portion || ""));
+  const key = en.name.trim().toLowerCase();
+  const same = p.foods.filter((x) => x.name.trim().toLowerCase() === key);
+  let f = same.find((x) => x.label) || same.sort((x, y) => (y.lastUsed || 0) - (x.lastUsed || 0))[0];
   if (!f) { f = { id: uid(), uses: 0 }; p.foods.push(f); }
-  Object.assign(f, { name: en.name, portion: en.portion, kcal: en.kcal, p: en.p, c: en.c, f: en.f, lastUsed: Date.now() });
+  if (!f.label) Object.assign(f, { name: en.name, portion: en.portion, kcal: en.kcal, p: en.p, c: en.c, f: en.f, lastAmount: undefined, lastUnit: undefined });
+  f.lastUsed = Date.now();
   f.uses = (f.uses || 0) + 1;
 }
 
@@ -975,14 +994,14 @@ function typeBody() {
 }
 
 /** Saved foods with exact numbers, so "85 g of my granola" uses the label. */
-function knownFoodsText() {
-  const foods = [...(P().foods || [])].sort((a, b) => (b.uses || 0) - (a.uses || 0)).slice(0, 40);
-  return foods.map((f) => `- ${f.name}: ${f.kcal} kcal, P ${f.p} g, C ${f.c} g, F ${f.f} g per ${f.label?.servText || f.portion || "serving"}`).join("\n");
+function knownFoodsText(limit = 40, foods = savedFoods()) {
+  return [...foods].sort((a, b) => (b.label ? 1 : 0) - (a.label ? 1 : 0) || (b.uses || 0) - (a.uses || 0)).slice(0, limit)
+    .map((f) => `- ${f.name}: ${f.kcal} kcal, P ${f.p} g, C ${f.c} g, F ${f.f} g per ${f.label?.servText || f.portion || "serving"}`).join("\n");
 }
 
 /* ---------- Nutrition labels + scale (several at once) ---------- */
 let lbl = null; // { items: [{ id, image, loading, error, data, amount, unit, foodId }], error }
-const MAX_LABELS = 8;
+const MAX_LABELS = 12;
 
 /** "4 cookies (33g)" → { count: 4, unit: "cookies" }; null when the serving isn't a count of something. */
 function labelCount(servText = "") {
@@ -1031,35 +1050,51 @@ const labelReader = (smart = false) => (smart || state.labelModel === "main"
   ? { model: state.model || DEFAULT_MODEL, effort: "medium" }
   : { model: LABEL_MODEL, effort: "low" });
 
-function savedLabelItem(f) {
-  const L = f.label;
-  return lblItem({ foodId: f.id, unit: L.lastUnit || "", amount: L.lastAmount ?? "",
-    data: { name: f.name, servText: L.servText, servAmt: L.servAmt, servUnit: L.servUnit, kcal: f.kcal, p: f.p, c: f.c, f: f.f, fiber: L.fiber, allergens: L.allergens || "" } });
+/** Grams in a serving description: "4 cookies (33g)", "150 g", "6 oz". */
+function portionGrams(text = "") {
+  let m = String(text).match(/\((\d*\.?\d+)\s*(g|ml)\)/i);
+  if (m) return { amt: Number(m[1]), unit: m[2].toLowerCase() };
+  m = String(text).trim().match(/^(\d*\.?\d+)\s*(g|grams?|ml)\b/i);
+  if (m) return { amt: Number(m[1]), unit: /ml/i.test(m[2]) ? "ml" : "g" };
+  m = String(text).trim().match(/^(\d+\s+\d+\/\d+|\d+\/\d+|\d*\.?\d+)\s*(oz|ounces?)\b/i);
+  if (m) return { amt: r1(parseQty(m[1]) * 28.3495), unit: "g" };
+  return { amt: 0, unit: "" };
+}
+/** Start in the unit the serving is written in ("6 oz" → oz, "2 slices" → slices); scanned labels start in grams. */
+function defaultUnit(d) {
+  const units = labelUnits(d);
+  if (d.isLabel) return units[0];
+  const lead = String(d.servText || "").trim().match(/^(?:\d+\s+\d+\/\d+|\d+\/\d+|\d*\.?\d+)\s*([a-z]+)/i)?.[1]?.toLowerCase() || "";
+  if (/^(oz|ounces?)$/.test(lead) && units.includes("oz")) return "oz";
+  if (/^(g|grams?)$/.test(lead) && units.includes("g")) return "g";
+  const pc = labelCount(d.servText);
+  return pc ? pc.unit : "servings";
 }
 
-function savedLabelResults() {
-  const inList = new Set((lbl?.items || []).map((it) => it.foodId).filter(Boolean));
-  const q = (addState.lq || "").trim().toLowerCase();
-  let foods = (P().foods || []).filter((f) => f.label && !inList.has(f.id)).sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0));
-  if (q) foods = foods.filter((f) => f.name.toLowerCase().includes(q));
-  return foods.slice(0, 40).map((f) => `<button class="food-item" data-act="lbl-saved" data-id="${f.id}">
-      <div class="grow"><div class="nm">🏷️ ${esc(f.name)}</div><div class="sub num">per ${esc(f.label.servText || "serving")} · ${r0(f.kcal)} kcal · P ${r0(f.p)}${f.label.lastAmount ? ` · last time ${f.label.lastAmount} ${esc(f.label.lastUnit || "")}` : ""}</div></div>
-      <span class="plus-sm">+</span></button>`).join("") || `<div class="empty">${q ? "No matches." : "All your saved labels are in this meal."}</div>`;
+function savedFoodItem(f) {
+  const L = f.label;
+  const servText = L?.servText || f.portion || "1 serving";
+  const g = L ? { amt: L.servAmt, unit: L.servUnit } : portionGrams(servText);
+  const data = { name: f.name, servText, servAmt: g.amt || 0, servUnit: g.unit || "", kcal: f.kcal, p: f.p, c: f.c, f: f.f, fiber: L?.fiber || 0, allergens: L?.allergens || "", isLabel: !!L };
+  const lastU = L ? L.lastUnit : f.lastUnit, lastA = L ? L.lastAmount : f.lastAmount;
+  const ok = lastU && labelUnits(data).includes(lastU);
+  return lblItem({ foodId: f.id, unit: ok ? lastU : defaultUnit(data), amount: ok ? lastA ?? "" : "", data });
 }
+
+/** Saved foods list inside the Label reader tab (same list as My foods). */
 function savedLabelsList() {
-  const n = (P().foods || []).filter((f) => f.label).length;
-  if (!n) return "";
+  if (!(P().foods || []).length) return "";
   return `<div class="saved-lbls">
-    <div class="sl-head"><b>⭐ Your saved labels</b><span class="small muted">tap to add · only the amount needed</span></div>
-    ${n > 6 ? `<input class="input search" id="lblSearch" type="search" placeholder="Search saved labels" value="${esc(addState.lq || "")}">` : ""}
-    <div class="food-list" id="lblSaved">${savedLabelResults()}</div></div>`;
+    <div class="sl-head"><b>⭐ Your saved foods</b><span class="small muted">tap, set the amount, done</span></div>
+    ${savedFoods().length > 6 ? `<input class="input search" id="foodSearch" type="search" placeholder="Search your foods" value="${esc(addState.q || "")}">` : ""}
+    <div id="foodResults">${foodResults()}</div></div>`;
 }
 
 const lblItem = (fields = {}) => ({ id: uid(), image: null, loading: false, error: null, data: null, amount: "", unit: "", foodId: null, ...fields });
 const lblReady = () => (lbl?.items || []).filter((it) => it.data && !it.loading);
 
 function labelCard(it, i) {
-  const thumb = it.image ? `<img class="lbl-thumb" src="${it.image.dataUrl}" alt="Label ${i + 1}">` : `<span class="lbl-thumb lbl-thumb-emo">🏷️</span>`;
+  const thumb = it.image ? `<img class="lbl-thumb" src="${it.image.dataUrl}" alt="Label ${i + 1}">` : `<span class="lbl-thumb lbl-thumb-emo">${it.data && !it.data.isLabel ? "⭐" : "🏷️"}</span>`;
   const rm = `<button class="rm" data-act="lbl-rm" data-i="${i}">Remove</button>`;
   if (it.loading) {
     return `<div class="ai-item lbl-card"><div class="lbl-row">${thumb}<div class="grow lbl-wait"><div class="spinner sm"></div><span class="small muted">Reading label ${i + 1}…</span></div></div></div>`;
@@ -1071,7 +1106,7 @@ function labelCard(it, i) {
   }
   const d = it.data;
   const units = labelUnits(d);
-  if (!units.includes(it.unit)) it.unit = units[0];
+  if (!units.includes(it.unit)) it.unit = defaultUnit(d);
   if (it.amount === "") it.amount = fromServings(d, 1, it.unit);
   const gfWarn = (P().diet || []).includes("Gluten-free") && /wheat|barley|rye|malt|gluten/i.test(d.allergens) && !/gluten[- ]free/i.test(d.allergens);
   return `<div class="ai-item lbl-card">
@@ -1082,7 +1117,7 @@ function labelCard(it, i) {
     </div></div>
     ${gfWarn ? `<div class="note warn" style="margin:8px 0 0">⚠️ This label lists a gluten source (${esc(d.allergens)}).</div>` : ""}
     ${it.editing ? `<div class="lbl-edit">
-      <div class="small muted" style="margin:8px 0 4px">Per serving, as printed on the label:</div>
+      <div class="small muted" style="margin:8px 0 4px">Per serving${d.isLabel ? ", as printed on the label" : ""}:</div>
       <div class="row4">${[["kcal", "kcal"], ["p", "Protein"], ["c", "Carbs"], ["f", "Fat"]].map(([k, l]) => `<label>${l}<input class="input num" data-lk="${k}" data-i="${i}" data-fk="${k}-${it.id}" type="number" inputmode="decimal" step="any" value="${d[k]}"></label>`).join("")}</div>
       <div class="row2" style="margin-top:6px"><label class="field" style="margin:0"><span>Serving size</span><input class="input" data-lk="servText" data-i="${i}" data-fk="st-${it.id}" value="${esc(d.servText || "")}" placeholder="4 cookies (33g)"></label>
         <label class="field" style="margin:0"><span>Grams per serving</span><input class="input num" data-lk="servAmt" data-i="${i}" data-fk="sa-${it.id}" type="number" inputmode="decimal" step="any" value="${d.servAmt || ""}"></label></div>
@@ -1097,27 +1132,31 @@ function labelCard(it, i) {
   </div>`;
 }
 
+/** The foods picked for this meal (scanned or saved), each with its own amount. */
+function plateHtml(extra = "") {
+  if (!lbl?.items.length) return "";
+  const ready = lblReady();
+  const busy = lbl.items.some((it) => it.loading);
+  const n = ready.length;
+  return `${lbl.items.map(labelCard).join("")}${extra}
+    ${n ? `<div class="ai-total num" id="lblTotal"></div>` : ""}
+    <button class="btn sticky-add" data-act="lbl-add" ${busy || !n ? "disabled" : ""}>${busy ? "Reading labels…" : `Add ${n > 1 ? `all ${n} ` : ""}to ${addState.meal}`}</button>`;
+}
+
 function labelBody() {
   if (!lbl) lbl = { items: [] };
+  const saved = savedLabelsList();
   if (!lbl.items.length) {
-    const saved = savedLabelsList();
     const scan = !state.apiKey
       ? `<div class="note">Reading new labels uses Claude. Add your Anthropic API key once in <b>Settings → Claude</b>.</div><button class="btn" data-act="edit-ai" style="margin-bottom:14px">Set up Claude</button>`
       : (saved
         ? `<button class="btn" data-act="pick-label" style="margin-bottom:14px">📷 Scan new label(s)</button>`
         : `<button class="photo-drop" data-act="pick-label"><span class="cam">🏷️</span><b>Snap or choose labels</b><span class="small">Several in one meal? Pick them all at once, one label per photo.</span></button>`)
         + (lbl.error ? `<div class="note warn">${esc(lbl.error)}</div>` : "");
-    return `${scan}${saved || `<p class="small muted" style="text-align:center;margin-top:10px">Every label you scan is saved here, so next time you just tap it and enter the amount.</p>`}`;
+    return `${scan}${saved || `<p class="small muted" style="text-align:center;margin-top:10px">Every label you scan is saved as a product, so next time you just tap it and enter the amount.</p>`}`;
   }
-  const ready = lblReady();
-  const busy = lbl.items.some((it) => it.loading);
-  const n = ready.length;
-  const saved = savedLabelsList();
-  return `${lbl.items.map(labelCard).join("")}
-    ${lbl.items.length < MAX_LABELS && state.apiKey ? `<button class="btn secondary" data-act="pick-label" style="margin-bottom:10px">📷 Scan another label</button>` : ""}
-    ${n ? `<div class="ai-total num" id="lblTotal"></div>` : ""}
-    <button class="btn sticky-add" data-act="lbl-add" ${busy || !n ? "disabled" : ""}>${busy ? "Reading labels…" : `Add ${n > 1 ? `all ${n} ` : ""}to ${addState.meal}`}</button>
-    ${saved ? `<div style="margin-top:16px">${saved}</div>` : ""}`;
+  const scanMore = lbl.items.length < MAX_LABELS && state.apiKey ? `<button class="btn secondary" data-act="pick-label" style="margin-bottom:10px">📷 Scan another label</button>` : "";
+  return `${plateHtml(scanMore)}${saved ? `<div style="margin-top:16px">${saved}</div>` : ""}`;
 }
 
 function bindLabel() {
@@ -1142,8 +1181,6 @@ function bindLabel() {
     else it.data[k] = Number(inp.value) || 0;
     upd();
   }));
-  const s = $("#lblSearch");
-  s?.addEventListener("input", () => { addState.lq = s.value; $("#lblSaved").innerHTML = savedLabelResults(); });
   upd();
 }
 
@@ -1160,6 +1197,7 @@ const labelChanged = (mine) => addState && lbl === mine && addState.mode === "la
 async function readOneLabel(it, mine, smart = false) {
   try {
     it.data = await readLabel({ apiKey: state.apiKey, image: it.image, ...labelReader(smart) });
+    it.data.isLabel = true;
   } catch (err) {
     it.error = err.message;
   }
@@ -1173,6 +1211,7 @@ async function runLabels(files) {
   const room = MAX_LABELS - lbl.items.length;
   if (files.length > room) toast(`Up to ${MAX_LABELS} labels at a time.`);
   const batch = files.slice(0, Math.max(0, room)).map(() => lblItem({ loading: true }));
+  if (addState) addState.mode = "label";
   if (!batch.length) return;
   const mine = lbl;
   mine.items.push(...batch);
@@ -1199,20 +1238,19 @@ function addFromLabels() {
     const name = (d.name || "Food").trim();
     const portion = it.unit === "servings" ? `${amount} serving${amount === 1 ? "" : "s"}` : `${amount} ${it.unit}`;
     addEntry({ name, portion, kcal: t.kcal, p: r1(t.p), c: r1(t.c), f: r1(t.f), servings: 1 }, { saveFood: false });
-    // Remember the label (per serving) so next time only the weight is needed.
-    let f = (it.foodId && p.foods.find((x) => x.id === it.foodId)) || p.foods.find((x) => x.label && x.name.toLowerCase() === name.toLowerCase());
+    // Remember the product per serving (and this amount) so next time it's tap + amount.
+    let f = (it.foodId && p.foods.find((x) => x.id === it.foodId)) || (d.isLabel && p.foods.find((x) => x.label && x.name.toLowerCase() === name.toLowerCase()));
     if (!f) { f = { id: uid(), uses: 0 }; p.foods.push(f); }
-    Object.assign(f, {
-      name, portion: d.servText || "1 serving", kcal: d.kcal, p: d.p, c: d.c, f: d.f, lastUsed: Date.now(),
-      label: { servText: d.servText, servAmt: d.servAmt, servUnit: d.servUnit, fiber: d.fiber, allergens: d.allergens, lastUnit: it.unit, lastAmount: amount },
-    });
+    Object.assign(f, { name, portion: d.servText || "1 serving", kcal: d.kcal, p: d.p, c: d.c, f: d.f, lastUsed: Date.now() });
+    if (d.isLabel) f.label = { servText: d.servText, servAmt: d.servAmt, servUnit: d.servUnit, fiber: d.fiber, allergens: d.allergens, lastUnit: it.unit, lastAmount: amount };
+    else Object.assign(f, { lastUnit: it.unit, lastAmount: amount });
     f.uses = (f.uses || 0) + 1;
   }
   save();
   const skipped = lbl.items.length - ready.length;
   lbl = null; photo = null;
   closeSheet(); render();
-  toast(`${ready.length > 1 ? `Added ${ready.length} items` : "Added"} to ${meal} 🏷️${skipped ? ` · skipped ${skipped} unreadable` : ""}`);
+  toast(`${ready.length > 1 ? `Added ${ready.length} items` : "Added"} to ${meal} ✅${skipped ? ` · skipped ${skipped} unreadable` : ""}`);
 }
 
 $("#labelInput").addEventListener("change", (e) => {
@@ -1338,10 +1376,71 @@ function syncAiEdits() {
   });
 }
 
-async function runEstimate(refine = false) {
+/* ---- Typed meals made only of saved foods are logged without Claude ---- */
+const NUM_WORDS = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, twelve: 12, half: 0.5, quarter: 0.25 };
+const STOP = new Set(["of", "my", "the", "some", "a", "an", "and", "with", "plus", "i", "had", "ate", "for", "breakfast", "lunch", "dinner", "snack", "little", "bit", "few"]);
+const stemW = (w) => (w.length > 3 && w.endsWith("s") ? w.slice(0, -1) : w);
+const wordsOf = (s) => String(s).toLowerCase().replace(/[^a-z0-9 ]+/g, " ").split(/\s+/).filter((w) => w.length > 1 && !STOP.has(w)).map(stemW);
+
+function matchPart(part, foods) {
+  let s = part.trim().replace(/^(i had|i ate|ate|had)\s+/, "");
+  let qty = null, unit = null;
+  let m = s.match(/^(\d+\s+\d+\/\d+|\d+\/\d+|\d*\.?\d+)\s*/);
+  if (m) { qty = parseQty(m[1]); s = s.slice(m[0].length); }
+  else {
+    const w = s.split(/\s+/)[0];
+    if (w in NUM_WORDS) { qty = NUM_WORDS[w]; s = s.slice(w.length).trim().replace(/^(a|an)\s+/, ""); }
+  }
+  m = s.match(/^(grams?|gr|g|ounces?|oz|servings?|ml)\b\.?\s*/);
+  if (m) { unit = /^g/.test(m[1]) ? "g" : /^o/.test(m[1]) ? "oz" : /^s/.test(m[1]) ? "servings" : "ml"; s = s.slice(m[0].length); }
+  const q = wordsOf(s);
+  if (!q.length) return null;
+  let best = null;
+  for (const f of foods) {
+    const fw = wordsOf(f.name);
+    if (!fw.length || !q.every((w) => fw.some((x) => x === w || (w.length >= 4 && x.startsWith(w))))) continue;
+    const cover = q.length / fw.length;
+    if (!best || cover > best.cover || (cover === best.cover && (f.uses || 0) > (best.f.uses || 0))) best = { f, cover };
+  }
+  if (!best) return null;
+  const item = savedFoodItem(best.f);
+  if (qty == null && !unit) return item; // no amount given: last time's amount
+  const units = labelUnits(item.data);
+  const pc = labelCount(item.data.servText);
+  if (!unit) unit = pc && q.includes(stemW(pc.unit.split(" ").pop())) ? pc.unit : "servings";
+  if (!units.includes(unit)) return null;
+  item.unit = unit;
+  item.amount = qty ?? 1;
+  return item;
+}
+
+/** Every part of "6 goodie girl cookies and 150g greek yogurt" must match a saved food, or Claude handles it. */
+function localMatch(text) {
+  const foods = savedFoods();
+  if (!foods.length || !text.trim()) return null;
+  const parts = text.toLowerCase().split(/,|;|\n|\+|&|\band\b|\bwith\b|\bplus\b/).map((s) => s.trim()).filter(Boolean);
+  const items = [];
+  for (const part of parts) {
+    const it = matchPart(part, foods);
+    if (!it || items.some((x) => x.foodId === it.foodId)) return null;
+    items.push(it);
+  }
+  return items.length ? items : null;
+}
+
+async function runEstimate(refine = false, { noLocal = false } = {}) {
   const descEl = $("#photoDesc");
   if (descEl) photo.desc = descEl.value;
   if (!photo.images.length && !photo.desc.trim()) return toast(addState?.mode === "type" ? "Type what you ate first." : "Add a photo or a description first.");
+  if (!refine && !noLocal && !photo.images.length) {
+    const local = localMatch(photo.desc);
+    if (local) {
+      lbl = { items: local };
+      addState.mode = "foods"; addState.local = true; addState.q = "";
+      renderAdd();
+      return;
+    }
+  }
   let answers = [], previous = null;
   if (refine) {
     syncAiEdits();
@@ -1644,7 +1743,14 @@ function todayContext() {
     `Local time: ${h}:00 (${h < 11 ? "morning" : h < 15 ? "midday" : h < 20 ? "evening" : "late night"}).`,
     dietLine(p),
     p.foodPrefs ? `My food preferences and dislikes: ${p.foodPrefs}` : "",
+    pantryLine(),
   ].filter(Boolean).join("\n");
+}
+
+/** Products the user keeps, with exact numbers, so suggestions can use them. */
+function pantryLine(limit = 25) {
+  const list = knownFoodsText(limit);
+  return list ? `Foods I keep, with exact nutrition per serving (work these in where they fit, scale them to the portion, and use these numbers instead of estimating):\n${list}` : "";
 }
 
 function weekContext() {
@@ -1847,7 +1953,7 @@ async function runExampleClaude() {
   exDay.loading = true; exDay.error = null;
   renderExampleDay();
   try {
-    const context = [`Daily targets: ${tg.kcal} kcal, ${tg.protein} g protein, ${tg.carbs} g carbs, ${tg.fat} g fat.`, dietLine(p), p.foodPrefs ? `Preferences and dislikes: ${p.foodPrefs}` : ""].filter(Boolean).join("\n");
+    const context = [`Daily targets: ${tg.kcal} kcal, ${tg.protein} g protein, ${tg.carbs} g carbs, ${tg.fat} g fat.`, dietLine(p), p.foodPrefs ? `Preferences and dislikes: ${p.foodPrefs}` : "", pantryLine()].filter(Boolean).join("\n");
     const data = await suggestExampleDay({ apiKey: state.apiKey, model: state.model || DEFAULT_MODEL, context, budgets });
     if (!exDay) return;
     exDay.claude = data;
@@ -2037,12 +2143,17 @@ function bindPlanner() {
 function currentPlanPrompt() {
   const h = household();
   const slots = MEAL_PATTERNS[h.pattern].slots.map(([name, kind, share]) => ({ name, kind, share }));
-  return { slots, startYmd: planStart(), people: planPeople(), notes: h.notes };
+  // Everyone's saved products (one copy each), so the plan can use what we already buy.
+  const seen = new Map();
+  for (const pr of Object.values(state.profiles)) for (const f of pr.foods || []) {
+    const k = (f.name || "").trim().toLowerCase();
+    if (k && (!seen.has(k) || f.label)) seen.set(k, f);
+  }
+  return { slots, startYmd: planStart(), people: planPeople(), notes: h.notes, staples: knownFoodsText(30, [...seen.values()]) };
 }
 
 async function copyPlanRequest() {
-  const { slots, startYmd, people, notes } = currentPlanPrompt();
-  const text = buildPlanPrompt({ startYmd, people, slots, notes });
+  const text = buildPlanPrompt(currentPlanPrompt());
   try { await navigator.clipboard.writeText(text); toast("Copied! Paste it into the Claude app 📋"); }
   catch {
     openSheet(`${sheetTitle("Copy this into Claude")}<textarea class="input" rows="14" readonly id="promptBox">${esc(text)}</textarea><p class="hint">Select all and copy, then paste into the Claude app.</p><button class="btn" data-act="plan-reopen">Done</button>`);
@@ -2063,10 +2174,10 @@ function acceptPlan(data) {
 
 async function planViaApi() {
   if (planUI.busy) return;
-  const { slots, startYmd, people, notes } = currentPlanPrompt();
+  const { slots, startYmd, people } = currentPlanPrompt();
   planUI.busy = true; planUI.error = null; renderPlanner();
   try {
-    const data = await generatePlan({ apiKey: state.apiKey, model: state.model || DEFAULT_MODEL, prompt: buildPlanPrompt({ startYmd, people, slots, notes }) });
+    const data = await generatePlan({ apiKey: state.apiKey, model: state.model || DEFAULT_MODEL, prompt: buildPlanPrompt(currentPlanPrompt()) });
     if (!planUI) return;
     planUI.busy = false;
     acceptPlan(data);
@@ -3243,7 +3354,7 @@ document.addEventListener("click", (ev) => {
     case "coach-review": openReview(false); break;
     case "review-again": runReview(); break;
     case "pick-meal": addState.meal = v; renderAdd(); break;
-    case "add-mode": syncAiEdits(); addState.mode = v; P().addMode = v; save(); renderAdd(); break;
+    case "add-mode": syncAiEdits(); addState.mode = v; addState.local = false; P().addMode = v; save(); renderAdd(); break;
     case "pick-label": $("#labelInput").click(); break;
     case "lbl-unit": {
       const it = lbl?.items[Number(t.dataset.i)];
@@ -3255,12 +3366,14 @@ document.addEventListener("click", (ev) => {
     case "lbl-fix": { const it = lbl?.items[Number(t.dataset.i)]; if (it) { it.editing = !it.editing; renderAdd(); } break; }
     case "lbl-saved": {
       const f = p.foods.find((x) => x.id === t.dataset.id);
-      if (!f?.label) break;
+      if (!f) break;
       if (!lbl) lbl = { items: [] };
-      if (lbl.items.length >= MAX_LABELS) { toast(`Up to ${MAX_LABELS} labels at a time.`); break; }
-      lbl.items.push(savedLabelItem(f)); renderAdd();
+      if (lbl.items.length >= MAX_LABELS) { toast(`Up to ${MAX_LABELS} foods at a time.`); break; }
+      lbl.items.push(savedFoodItem(f)); addState.q = ""; renderAdd();
+      setTimeout(() => $(`[data-fk="amt-${lbl.items[lbl.items.length - 1].id}"]`)?.focus(), 60);
       break;
     }
+    case "local-to-claude": lbl = null; addState.local = false; addState.mode = "type"; runEstimate(false, { noLocal: true }); break;
     case "lbl-add": addFromLabels(); break;
     case "lbl-rm": lbl?.items.splice(Number(t.dataset.i), 1); renderAdd(); break;
     case "lbl-retry": {
@@ -3268,20 +3381,6 @@ document.addEventListener("click", (ev) => {
       if (!it?.image) break;
       it.loading = true; it.error = null; renderAdd();
       readOneLabel(it, lbl, true);
-      break;
-    }
-    case "add-food": {
-      const f = p.foods.find((x) => x.id === t.dataset.id);
-      if (!f) break;
-      if (f.label) {
-        if (!lbl) lbl = { items: [] };
-        lbl.items.push(savedLabelItem(f));
-        addState.mode = "label"; renderAdd();
-        break;
-      }
-      addEntry({ name: f.name, portion: f.portion, kcal: f.kcal, p: f.p, c: f.c, f: f.f, servings: 1 });
-      toast(`${f.name} added to ${addState.meal}`);
-      render();
       break;
     }
     case "pick-photo": { const d = $("#photoDesc"); if (d && photo) photo.desc = d.value; $("#photoInput").click(); break; }
