@@ -1,7 +1,7 @@
 // Live workout: fast logging with prefilled targets, rest timer and autosave.
 
 import { ctx, me, save, render, toast, esc, uid, today, $, on, openSheet, closeSheet, sheetTitle, fmtDur, fmtRest, fmtDate } from "./core.js";
-import { EX, alternativesFor } from "../domain/exercises.js";
+import { EX, alternativesFor, similarFor } from "../domain/exercises.js";
 import { MUSCLES } from "../domain/vocab.js";
 import { startWorkout, exerciseEntry, exerciseHistory, workoutSummary, templateOf } from "../domain/history.js";
 import { adjustNextSet, detectPRs, workingSets } from "../domain/progression.js";
@@ -156,12 +156,24 @@ function beep() {
 }
 export function tickRest() {
   const bar = $("#restBar");
-  if (!ctx.rest) { bar.hidden = true; return; }
-  const left = Math.ceil((ctx.rest.endAt - Date.now()) / 1000);
-  if (left <= 0) {
-    ctx.rest = null; bar.hidden = true; beep(); toast("Rest done — next set 💪");
+  if (!ctx.rest) { bar.hidden = true; bar.classList.remove("go"); return; }
+  // After rest ends the bar stays for a few seconds and flashes: iPhones mute
+  // web audio on silent and don't support vibration, so this must be visible.
+  if (ctx.rest.goUntil) {
+    if (Date.now() > ctx.rest.goUntil) { ctx.rest = null; bar.hidden = true; bar.classList.remove("go"); }
     return;
   }
+  const left = Math.ceil((ctx.rest.endAt - Date.now()) / 1000);
+  if (left <= 0) {
+    ctx.rest.goUntil = Date.now() + 5000;
+    bar.hidden = false; bar.classList.add("go");
+    $("#restTime").textContent = "GO";
+    $("#restLabel").textContent = ctx.rest.label || "Next set";
+    $("#restFill").style.width = "100%";
+    beep();
+    return;
+  }
+  bar.classList.remove("go");
   bar.hidden = false;
   $("#restTime").textContent = fmtDur(left);
   $("#restLabel").textContent = ctx.rest.label || "Rest";
@@ -289,7 +301,7 @@ on({
     if (!confirm("Discard this workout? Nothing from it will be saved.")) return;
     me().active = null; ctx.rest = null; save(); ctx.tab = "today"; render();
   },
-  "rest-add": (el) => { if (ctx.rest) { ctx.rest.endAt += Number(el.dataset.v) * 1000; ctx.rest.total = Math.max(ctx.rest.total, (ctx.rest.endAt - Date.now()) / 1000); tickRest(); } },
+  "rest-add": (el) => { if (ctx.rest && !ctx.rest.goUntil) { ctx.rest.endAt += Number(el.dataset.v) * 1000; ctx.rest.total = Math.max(ctx.rest.total, (ctx.rest.endAt - Date.now()) / 1000); tickRest(); } },
   "rest-skip": () => { ctx.rest = null; tickRest(); },
   "ex-info": (el) => exerciseSheet(el.dataset.id),
 });
@@ -298,12 +310,13 @@ function swapSheet(i) {
   const p = me();
   const e = log().exercises[i];
   const alts = alternativesFor(e.exerciseId, p.profile.equipment);
+  const sim = similarFor(e.exerciseId, p.profile.equipment);
   const avoid = Object.keys(p.profile.limits || {}).filter((j) => p.profile.limits[j] === "avoid");
   openSheet(`${sheetTitle(`Swap ${esc(EX[e.exerciseId].name)}`)}
     <p class="muted small">Same movement pattern, so the plan stays balanced. Sets, reps and rest carry over.</p>
     <label class="toggle-row card" style="margin-bottom:10px"><span>Also change it in my plan</span><input type="checkbox" id="swapKeep"></label>
-    <div class="food-list">${alts.map((a) => `<button class="food-item" data-act="wk-swap-pick" data-i="${i}" data-id="${a.id}">
-      <div class="grow"><b>${esc(a.name)}</b><div class="small muted">${["", "Beginner", "Intermediate", "Advanced"][a.level]}${a.joints.some((j) => avoid.includes(j)) ? " · ⚠️ loads an area you're avoiding" : ""}</div></div><span>›</span></button>`).join("") || `<div class="empty">No alternatives with your equipment.</div>`}</div>`);
+    ${swapList(alts, i, avoid, "wk-swap-pick") || `<div class="empty">No same-movement alternatives with your equipment.</div>`}
+    ${sim.length ? `<h3 style="margin:14px 0 8px">Similar — works the same muscles</h3>${swapList(sim, i, avoid, "wk-swap-pick")}` : ""}`);
 }
 
 function replaceExercise(i, newId, permanent) {
@@ -321,4 +334,25 @@ function replaceExercise(i, newId, permanent) {
   }
   save(); render();
   toast(permanent ? `Swapped to ${EX[newId].name} — plan updated` : `Swapped to ${EX[newId].name} for today`);
+}
+
+/* ---------------- Keep the screen on during a workout ---------------- */
+let wakeLock = null;
+export async function syncWakeLock(wanted) {
+  try {
+    if (wanted && !wakeLock && document.visibilityState === "visible" && navigator.wakeLock) {
+      wakeLock = await navigator.wakeLock.request("screen");
+      wakeLock.addEventListener?.("release", () => { wakeLock = null; });
+    } else if (!wanted && wakeLock) {
+      await wakeLock.release(); wakeLock = null;
+    }
+  } catch { wakeLock = null; } // not supported or not allowed — the app works the same
+}
+
+const LEVEL = ["", "Beginner", "Intermediate", "Advanced"];
+/** A list of swap choices (shared with the Plan editor). */
+export function swapList(list, i, avoid, act, extra = "") {
+  if (!list.length) return "";
+  return `<div class="food-list">${list.map((a) => `<button class="food-item" data-act="${act}" data-i="${i}" data-id="${a.id}" ${extra}>
+    <div class="grow"><b>${esc(a.name)}</b><div class="small muted">${LEVEL[a.level]} · ${a.primary.map((m) => MUSCLES[m]).join(", ")}${a.joints.some((j) => avoid.includes(j)) ? " · ⚠️ loads an area you're avoiding" : ""}</div></div><span>⇄</span></button>`).join("")}</div>`;
 }

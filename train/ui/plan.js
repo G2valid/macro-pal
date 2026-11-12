@@ -1,7 +1,7 @@
 // Plan: week & month calendar, and the editable program.
 
 import { ctx, me, save, render, toast, esc, today, on, openSheet, closeSheet, sheetTitle, fmtDate, fmtRest, evBadge, $ } from "./core.js";
-import { EX, EXERCISES, alternativesFor, hasEquipment } from "../domain/exercises.js";
+import { EX, EXERCISES, alternativesFor, similarFor, hasEquipment } from "../domain/exercises.js";
 import { MUSCLES, TRACKED_MUSCLES, PATTERNS } from "../domain/vocab.js";
 import { SPLITS, weeklyVolume, estimateMinutes } from "../domain/generate.js";
 import { prescriptionFor, STYLE_NOTES } from "../domain/prescribe.js";
@@ -9,7 +9,7 @@ import { addDays, weekStart, moveSession, shiftFrom, parseYmd, ymd, INTENSITY } 
 import { templateOf } from "../domain/history.js";
 import { sessionLabel } from "./today.js";
 import { CARDIO_MODES } from "./onboard.js";
-import { beginWorkout } from "./workout.js";
+import { beginWorkout, swapList } from "./workout.js";
 import { exerciseSheet } from "./library.js";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -129,6 +129,8 @@ function slotSheet(tid, i) {
   const s = t.slots[i];
   const ex = EX[s.exerciseId];
   const alts = alternativesFor(s.exerciseId, p.profile.equipment);
+  const sim = similarFor(s.exerciseId, p.profile.equipment);
+  const avoid = Object.keys(p.profile.limits || {}).filter((j) => p.profile.limits[j] === "avoid");
   const num = (k, label, step = 1, min = 0) => `<label class="field"><span>${label}</span><div class="stepper"><button type="button" data-act="slot-step" data-k="${k}" data-d="${-step}" data-t="${tid}" data-i="${i}">−</button><b class="num">${k === "rest" ? fmtRest(s[k]) : s[k]}</b><button type="button" data-act="slot-step" data-k="${k}" data-d="${step}" data-t="${tid}" data-i="${i}">+</button></div></label>`;
   openSheet(`${sheetTitle(esc(ex.name))}
     <button class="link" data-act="ex-info" data-id="${ex.id}">How to do it ›</button>
@@ -140,7 +142,8 @@ function slotSheet(tid, i) {
     </div>
     <div class="btn-row"><button class="btn secondary" data-act="slot-up" data-t="${tid}" data-i="${i}" ${i === 0 ? "disabled" : ""}>Move up</button><button class="btn secondary" data-act="slot-down" data-t="${tid}" data-i="${i}" ${i === t.slots.length - 1 ? "disabled" : ""}>Move down</button></div>
     <h3 style="margin:16px 0 8px">Swap for</h3>
-    <div class="food-list">${alts.map((a) => `<button class="food-item" data-act="slot-swap" data-t="${tid}" data-i="${i}" data-id="${a.id}"><div class="grow"><b>${esc(a.name)}</b><div class="small muted">${["", "Beginner", "Intermediate", "Advanced"][a.level]}</div></div><span>⇄</span></button>`).join("") || `<div class="empty">No alternatives with your equipment.</div>`}</div>
+    ${swapList(alts, i, avoid, "slot-swap", `data-t="${tid}"`) || `<div class="empty">No same-movement alternatives with your equipment.</div>`}
+    ${sim.length ? `<h3 style="margin:14px 0 8px">Similar — works the same muscles</h3>${swapList(sim, i, avoid, "slot-swap", `data-t="${tid}"`)}` : ""}
     <button class="btn danger" data-act="slot-del" data-t="${tid}" data-i="${i}" style="margin-top:12px">Remove from ${esc(t.name)}</button>`);
 }
 
@@ -182,7 +185,7 @@ on({
   },
   "slot-up": (el) => { const { t, i } = slotOf(el); [t.slots[i - 1], t.slots[i]] = [t.slots[i], t.slots[i - 1]]; save(); slotSheet(t.id, i - 1); render(); },
   "slot-down": (el) => { const { t, i } = slotOf(el); [t.slots[i + 1], t.slots[i]] = [t.slots[i], t.slots[i + 1]]; save(); slotSheet(t.id, i + 1); render(); },
-  "slot-swap": (el) => { const { s } = slotOf(el); s.exerciseId = el.dataset.id; recompute(me()); save(); closeSheet(); render(); toast(`Swapped to ${EX[el.dataset.id].name}`); },
+  "slot-swap": (el) => { const { s } = slotOf(el); s.exerciseId = el.dataset.id; s.pattern = EX[el.dataset.id].pattern; recompute(me()); save(); closeSheet(); render(); toast(`Swapped to ${EX[el.dataset.id].name}`); },
   "slot-del": (el) => {
     const { t, i, s } = slotOf(el);
     if (t.slots.length <= 1) return toast("A session needs at least one exercise.");

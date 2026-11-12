@@ -4,7 +4,7 @@ import { ctx, initState, me, save, render, setRender, actions, $, esc, applyThem
 import { requestPersistence } from "./store.js";
 import { renderOnboarding, startOnboarding, onboardInput, ob } from "./ui/onboard.js";
 import { renderToday } from "./ui/today.js";
-import { renderWorkout, workoutInput, tickRest } from "./ui/workout.js";
+import { renderWorkout, workoutInput, tickRest, syncWakeLock } from "./ui/workout.js";
 import { renderPlan } from "./ui/plan.js";
 import { renderLibrary, libraryInput } from "./ui/library.js";
 import { renderProgress, progressInput, chartHover } from "./ui/progress.js";
@@ -27,6 +27,7 @@ function draw() {
   for (const t of document.querySelectorAll(".tab")) t.classList.toggle("active", t.dataset.v === ctx.tab || (ctx.tab === "workout" && t.dataset.v === "today"));
   if (onboarding) renderOnboarding(view);
   else (VIEWS[ctx.tab] || renderToday)(view);
+  syncWakeLock(!!me()?.active);
 }
 setRender(draw);
 
@@ -63,6 +64,7 @@ setInterval(() => {
 let lastDay = today();
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible") return;
+  syncWakeLock(!!me()?.active); // iOS releases the lock when the app is backgrounded
   applyTheme(); // Bite Club theme may have changed
   if (today() !== lastDay) { lastDay = today(); if (ctx.tab !== "workout" && ctx.tab !== "onboard") render(); }
 });

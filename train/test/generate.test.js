@@ -124,7 +124,8 @@ test("upper/lower places leg days apart when possible", () => {
 });
 
 test("pickExercise falls back gracefully and returns null when impossible", () => {
-  assert.equal(pickExercise({ pattern: "knee_ext", role: "accessory" }, { equipment: [], experience: "new" }), null);
+  assert.equal(pickExercise({ pattern: "fly", role: "accessory" }, { equipment: [], experience: "new" }), null);
+  assert.ok(pickExercise({ pattern: "knee_ext", role: "accessory" }, { equipment: [], experience: "intermediate" }), "bodyweight quad options exist");
 });
 
 test("mobility goal adds cool-down drills", () => {
@@ -138,9 +139,10 @@ test("health-screen flag keeps 3+ reps in reserve", () => {
 });
 
 test("missing equipment falls back to a related pattern instead of dropping it", () => {
-  const p = generateProgram({ ...base, equipment: ["dumbbells", "bench"] });
-  assert.ok(p.warnings.some((w) => /covers it/.test(w)));
-  assert.ok(allSlots(p).some((s) => s.pattern === "h_pull"));
+  // Bodyweight only, 5 days → includes a Push day whose chest fly needs equipment.
+  const p = generateProgram({ ...base, experience: "intermediate", days: [1, 2, 3, 4, 5], equipment: [] });
+  assert.ok(p.warnings.some((w) => /covers it/.test(w)), p.warnings.join(" | "));
+  assert.ok(!allSlots(p).some((s) => s.pattern === "fly"));
 });
 
 test("in a full gym, main and secondary lifts are loadable", () => {

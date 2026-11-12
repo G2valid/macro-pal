@@ -15,6 +15,8 @@
 //                problem areas — not a statement that it is risky)
 //   easier/harder progressions within the same pattern
 
+import { MORE } from "./exercises-more.js";
+
 const BREATH = {
   brace: "Breathe in and brace your stomach before each rep, hold it through the hardest part, then breathe out at the top.",
   press: "Breathe in on the way down, breathe out as you press through the hardest part.",
@@ -909,7 +911,7 @@ const RAW = [
   },
 ];
 
-export const EXERCISES = RAW.map((e) => ({
+export const EXERCISES = [...RAW, ...MORE].map((e) => ({
   uni: false, main: false, easier: [], harder: [], secondary: [], joints: [],
   breathing: BREATH[DEFAULT_BREATH[e.pattern]],
   ...e,
@@ -919,6 +921,23 @@ export const EX = Object.fromEntries(EXERCISES.map((e) => [e.id, e]));
 
 /** Does the user's equipment list cover everything this exercise needs? */
 export const hasEquipment = (ex, equipment) => ex.equip.every((q) => equipment.includes(q));
+
+// Patterns that train largely the same muscles — offered as "similar" swaps.
+export const RELATED = {
+  squat: ["lunge", "knee_ext"], lunge: ["squat"], hinge: ["hip_ext", "knee_flex"], hip_ext: ["hinge"],
+  knee_flex: ["hinge"], knee_ext: ["squat", "lunge"], hip_abd: ["hip_ext"], h_push: ["fly"], fly: ["h_push"],
+  v_push: ["lat_raise"], h_pull: ["v_pull", "rear_delt"], v_pull: ["h_pull"], lat_raise: ["v_push"], rear_delt: ["h_pull"],
+  core_anti_ext: ["core_rot", "core_flex"], core_rot: ["core_anti_ext"], core_flex: ["core_anti_ext"], carry: ["core_rot"],
+};
+
+/** Exercises in related patterns that work the same main muscle, easiest-first. */
+export function similarFor(id, equipment = null) {
+  const ex = EX[id];
+  if (!ex) return [];
+  return EXERCISES
+    .filter((e) => (RELATED[ex.pattern] || []).includes(e.pattern) && e.primary.some((m) => ex.primary.includes(m)) && (!equipment || hasEquipment(e, equipment)))
+    .sort((a, b) => Math.abs(a.level - ex.level) - Math.abs(b.level - ex.level) || a.name.localeCompare(b.name));
+}
 
 /** Exercises in the same movement pattern, nearest difficulty first. */
 export function alternativesFor(id, equipment = null) {

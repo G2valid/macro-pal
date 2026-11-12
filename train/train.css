@@ -185,3 +185,8 @@ body.in-workout { padding-bottom: calc(150px + env(safe-area-inset-bottom)); }
 .mlegend { flex-wrap: wrap; }
 .mlegend .ld { margin-right: 5px; }
 body.in-workout .toast { bottom: calc(150px + env(safe-area-inset-bottom)); }
+
+/* Rest finished: flash so it's visible on a silent iPhone */
+.rest-bar.go { background: var(--accent); color: var(--accent-ink); animation: restgo .5s ease-in-out 6 alternate; }
+.rest-bar.go .rest-fill { display: none; }
+@keyframes restgo { from { transform: scale(1); } to { transform: scale(1.04); filter: brightness(1.25); } }
