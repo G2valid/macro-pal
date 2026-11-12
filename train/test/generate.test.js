@@ -163,3 +163,8 @@ test("repeated sessions get distinct names", () => {
   const names = p.templates.map((t) => t.name);
   assert.equal(new Set(names).size, names.length);
 });
+
+test("a plain beginner home plan raises no volume warnings", () => {
+  const p = generateProgram({ ...base, experience: "new", primary: "definition", equipment: ["dumbbells", "bench", "bands"] });
+  assert.ok(!p.warnings.some((w) => /direct sets/.test(w)), p.warnings.join(" | "));
+});

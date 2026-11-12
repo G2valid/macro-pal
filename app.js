@@ -2643,6 +2643,7 @@ function renderFitness() {
 
   const stat = (v, l) => `<div><b class="num">${v || "—"}</b><span>${l}</span></div>`;
   $("#view-fitness").innerHTML = `
+    <a class="banner" href="train/" style="text-decoration:none;color:inherit"><span class="big-emo">🏋️</span><div><b>Training Coach</b><span>Your lifting plan, workout logger and progress</span></div></a>
     <div class="btn-row">
       <button class="btn" data-act="open-import">📸 Import screenshot</button>
       <button class="btn secondary" data-act="open-workout">+ Log workout</button>

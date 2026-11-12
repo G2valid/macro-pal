@@ -388,7 +388,9 @@ export function generateProgram(profile, { weeks = 6, startDate = null } = {}) {
   const volume = weeklyVolume(sessions);
   const direct = weeklyVolume(sessions, { directOnly: true });
   for (const m of TRACKED_MUSCLES) {
-    if (direct[m] > targets.high + 4) warnings.push(`${MUSCLES[m]} gets ${direct[m]} direct sets a week — more than most people need. Consider trimming a set or two.`);
+    // Compound lifts overlap heavily (squats, lunges and hinges all count glutes), so only
+    // flag volume that is well above the target range.
+    if (direct[m] > Math.max(targets.high + 6, 20)) warnings.push(`${MUSCLES[m]} gets ${direct[m]} direct sets a week — more than most people need. Consider trimming a set or two.`);
   }
   const lowMuscles = TRACKED_MUSCLES.filter((m) => volume[m] < targets.low * 0.5 && !["calves", "abs", "rear_delts"].includes(m));
   if (lowMuscles.length && lift >= 2) reasons.push(`Lower volume for ${lowMuscles.map((m) => MUSCLES[m].toLowerCase()).join(", ")} this block to fit your time — they still get indirect work.`);

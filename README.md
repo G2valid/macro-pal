@@ -18,6 +18,18 @@ A calorie and macro tracker that runs as an installable web app (PWA) on iPhone,
 - Several people per device, each with their own theme (7 colors plus light, dark or match phone).
 - Backup/restore to a JSON file. Works offline, except photo estimates.
 
+## Training Coach (`train/`)
+A companion app for lifting and cardio, opened from Bite Club's Fitness tab (or at `/train/`). Hosted on the same site, it reads Bite Club's profiles, weights and cardio on the device, so there's nothing to enter twice. It never writes to Bite Club's data.
+- Adaptive onboarding: safety screen (based on ACSM pre-exercise screening), experience, goals, priority muscles, days, session length, equipment (including which dumbbells you own), joints to work around, and cardio ability.
+- Program generator: recommends full body, upper/lower or push/pull/legs from your days and experience. It picks exercises that fit your equipment and limits, checks weekly sets per muscle, and trims sessions to your time.
+- 94-exercise library with steps, cues, common mistakes, range of motion, breathing, alternatives and evidence notes. Searchable by muscle, movement and equipment.
+- Live workout logger: targets prefilled, one-tap set completion, effort (reps in reserve), rest timer, warm-up sets with plates per side, PRs, swaps, pain flag, "short on time" trimming, autosave.
+- Progression engine: double progression with smallest-available increments, stall and long-break handling, and no load increases after a pain flag. Every suggestion explains why.
+- Calendar (week/month), moving, skipping and missed-session handling; cardio that ramps ~10%/week toward your target; progress charts.
+- No AI calls: all numbers come from tested rules in `train/domain/`. Data lives in IndexedDB on the device; back up from Settings.
+
+Run the rule tests (Node 20+): `npm test`
+
 ## Hosting
 It must be served over HTTPS. Any static host works:
 - **Netlify Drop**: drag this folder onto https://app.netlify.com/drop
@@ -35,6 +47,7 @@ Create an API key at console.anthropic.com and paste it into Settings → Photo 
 - `ai.js`: Claude photo estimates
 - `vendor/anthropic-sdk.js`: bundled `@anthropic-ai/sdk` 1.3.0
 - `sw.js`: offline cache. Bump `VERSION` when you change files.
+- `train/`: the Training Coach (`domain/` = rules + exercise library, `ui/` = screens, `test/` = tests). Bump `VERSION` in `train/sw.js` when you change its files.
 
 Data lives only on each device (localStorage, plus IndexedDB for progress photos). Nothing is stored online; the only network calls are to Claude for photo, label and coach features.
 
