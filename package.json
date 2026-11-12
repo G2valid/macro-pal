@@ -1,0 +1,9 @@
+{
+  "name": "bite-club",
+  "private": true,
+  "type": "module",
+  "description": "Bite Club nutrition tracker and Training Coach. No build step: the files are the app.",
+  "scripts": {
+    "test": "node --test \"train/test/*.test.js\""
+  }
+}
