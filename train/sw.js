@@ -1,9 +1,9 @@
 // Offline cache for the Training Coach. Bump VERSION when files change.
-const VERSION = "train-v3";
+const VERSION = "train-v4";
 const SHELL = [
   "./", "index.html", "app.js", "train.css", "store.js", "manifest.json",
-  "ui/core.js", "ui/onboard.js", "ui/today.js", "ui/workout.js", "ui/plan.js", "ui/library.js", "ui/progress.js", "ui/settings.js",
-  "domain/vocab.js", "domain/exercises.js", "domain/exercises-more.js", "domain/loads.js", "domain/prescribe.js", "domain/generate.js", "domain/progression.js", "domain/schedule.js", "domain/history.js",
+  "ui/core.js", "ui/onboard.js", "ui/today.js", "ui/workout.js", "ui/plan.js", "ui/library.js", "ui/progress.js", "ui/settings.js", "ui/import.js", "ui/sync.js",
+  "domain/vocab.js", "domain/exercises.js", "domain/exercises-more.js", "domain/loads.js", "domain/prescribe.js", "domain/generate.js", "domain/progression.js", "domain/schedule.js", "domain/history.js", "domain/sync.js",
   "../styles.css", "../icons/icon.svg", "../icons/apple-touch-icon.png", "../icons/icon-192.png",
 ];
 

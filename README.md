@@ -19,7 +19,7 @@ A calorie and macro tracker that runs as an installable web app (PWA) on iPhone,
 - Backup/restore to a JSON file. Works offline, except photo estimates.
 
 ## Training Coach (`train/`)
-A companion app for lifting and cardio, opened from Bite Club's Fitness tab (or at `/train/`). Hosted on the same site, it reads Bite Club's profiles, weights and cardio on the device, so there's nothing to enter twice. It never writes to Bite Club's data.
+A companion app for lifting and cardio, opened from Bite Club's Fitness tab (or at `/train/`). Hosted on the same site, it reads Bite Club's profiles, weights and cardio on the device, so there's nothing to enter twice. Finished workouts and cardio are added to Bite Club's workout log (with MET-based calorie estimates), and screenshots can be imported from either app.
 - Adaptive onboarding: safety screen (based on ACSM pre-exercise screening), experience, goals, priority muscles, days, session length, equipment (including which dumbbells you own), joints to work around, and cardio ability.
 - Program generator: recommends full body, upper/lower or push/pull/legs from your days and experience. It picks exercises that fit your equipment and limits, checks weekly sets per muscle, and trims sessions to your time.
 - 164-exercise library (beginner to advanced, plenty of home options) with steps, cues, common mistakes, range of motion, breathing, alternatives and evidence notes. Searchable by muscle, movement and equipment.

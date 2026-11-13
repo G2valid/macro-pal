@@ -92,10 +92,12 @@ export const biteProfile = (id) => biteProfiles().find((p) => p.id === id) || nu
 
 const CARDIO_TYPES = new Set(["cycling", "running", "walking", "rowing", "swimming", "hiit", "other"]);
 
-/** Cardio-type workouts logged in Bite Club on a date (e.g. Peloton imports). */
+/** Cardio-type workouts logged in Bite Club on a date (e.g. Peloton imports).
+ *  Entries the Training Coach wrote itself are skipped — they're already
+ *  counted from the trainer's own logs. */
 export function biteCardio(id, date) {
   const p = bite()?.profiles?.[id];
-  return (p?.days?.[date]?.workouts || []).filter((w) => CARDIO_TYPES.has(w.type)).map((w) => ({
+  return (p?.days?.[date]?.workouts || []).filter((w) => CARDIO_TYPES.has(w.type) && w.source !== "trainer").map((w) => ({
     type: w.type, title: w.title || "", minutes: w.minutes || 0, distance: w.distance || 0, distUnit: w.distUnit || "mi", avgHr: w.avgHr || 0, kcal: w.kcal || 0,
   }));
 }
@@ -111,5 +113,69 @@ export function biteSteps(id, date) {
   return bite()?.profiles?.[id]?.days?.[date]?.activity?.steps || 0;
 }
 
-/** The Claude API key saved in Bite Club, so the coach can reuse it later. */
+/** The Claude API key and model chosen in Bite Club (reused, never copied). */
 export const biteApiKey = () => bite()?.apiKey || "";
+export const biteModel = () => bite()?.model || "";
+
+/* ---------------- Bite Club (writes) ----------------
+ * Read-modify-write straight from localStorage so we never overwrite newer
+ * Bite Club data. Bite Club reloads its state when you return to it. */
+function biteWrite(fn) {
+  try {
+    const s = JSON.parse(localStorage.getItem(BITE_KEY));
+    if (!s?.profiles) return false;
+    const changed = fn(s);
+    if (changed === false) return true;
+    localStorage.setItem(BITE_KEY, JSON.stringify(s));
+    return true;
+  } catch { return false; }
+}
+
+/** Add or update one workout in a Bite Club profile's day (matched by id). */
+export function biteUpsertWorkout(biteId, date, workout) {
+  return biteWrite((s) => {
+    const p = s.profiles[biteId];
+    if (!p) return false;
+    p.days ||= {};
+    const day = (p.days[date] ||= { entries: [], water: 0 });
+    day.entries ||= []; // Bite Club expects a food list on every day
+    day.workouts ||= [];
+    const i = day.workouts.findIndex((w) => w.id === workout.id);
+    if (i >= 0) day.workouts[i] = { ...day.workouts[i], ...workout };
+    else day.workouts.push(workout);
+  });
+}
+
+/** Remove a workout the trainer wrote (by id), wherever it is. */
+export function biteRemoveWorkout(biteId, id) {
+  return biteWrite((s) => {
+    const p = s.profiles[biteId];
+    if (!p?.days) return false;
+    let hit = false;
+    for (const day of Object.values(p.days)) {
+      const n = day.workouts?.length || 0;
+      if (n) { day.workouts = day.workouts.filter((w) => w.id !== id); hit ||= day.workouts.length !== n; }
+    }
+    return hit;
+  });
+}
+
+/** Save screenshot-import results into Bite Club exactly as Bite Club does. */
+export function biteSaveImport(biteId, date, workouts, daily, makeId) {
+  let added = 0;
+  const ok = biteWrite((s) => {
+    const p = s.profiles[biteId];
+    if (!p) return false;
+    p.days ||= {};
+    const day = (p.days[date] ||= { entries: [], water: 0 });
+    day.entries ||= []; // Bite Club expects a food list on every day
+    day.workouts ||= [];
+    for (const w of workouts) {
+      const dup = day.workouts.some((x) => (x.title || "") === (w.title || "") && x.minutes === w.minutes && x.kcal === w.kcal);
+      if (!dup) { day.workouts.push({ id: makeId(), source: "screenshot", ...w }); added++; }
+    }
+    const nz = Object.fromEntries(Object.entries(daily || {}).filter(([, v]) => v));
+    if (Object.keys(nz).length) day.activity = { ...(day.activity || {}), ...nz };
+  });
+  return ok ? added : -1;
+}

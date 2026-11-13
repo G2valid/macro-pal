@@ -190,3 +190,9 @@ body.in-workout .toast { bottom: calc(150px + env(safe-area-inset-bottom)); }
 .rest-bar.go { background: var(--accent); color: var(--accent-ink); animation: restgo .5s ease-in-out 6 alternate; }
 .rest-bar.go .rest-fill { display: none; }
 @keyframes restgo { from { transform: scale(1); } to { transform: scale(1.04); filter: brightness(1.25); } }
+
+/* Screenshot import */
+.imp-w { padding: 12px; }
+.imp-hdr { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.imp-hdr span { font-size: 22px; }
+.imp-hdr input { flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); }

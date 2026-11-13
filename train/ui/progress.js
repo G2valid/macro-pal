@@ -9,6 +9,7 @@ import { adherence, addDays, weekStart, cardioMinutesForWeek, parseYmd } from ".
 import { doneLogs, setsByMuscle, personalRecords, strengthSeries, repsSeries, loggedExercises, cardioMinutes, workoutSummary } from "../domain/history.js";
 import { biteWeights } from "../store.js";
 import { biteFor } from "./today.js";
+import { unsyncFromBite } from "./sync.js";
 
 /* ---------------- Charts (single series, accent colour) ---------------- */
 const W = 340, H = 170, PAD = { l: 34, r: 10, t: 12, b: 22 };
@@ -149,6 +150,7 @@ on({
     if (!confirm("Delete this workout from your history?")) return;
     const p = me();
     p.logs = p.logs.filter((l) => l.id !== el.dataset.id);
+    unsyncFromBite(p, el.dataset.id);
     for (const s of p.sessions) if (s.logId === el.dataset.id) { s.status = "planned"; delete s.logId; }
     save(); document.querySelector('[data-act="close"]')?.click(); render();
   },

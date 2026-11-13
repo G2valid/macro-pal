@@ -8,6 +8,7 @@ import { adjustNextSet, detectPRs, workingSets } from "../domain/progression.js"
 import { isWeighted, warmupSets, platesPerSide, fmtLb, DEFAULT_LOADS } from "../domain/loads.js";
 import { fitToTime, estimateMinutes } from "../domain/generate.js";
 import { exerciseSheet } from "./library.js";
+import { syncToBite } from "./sync.js";
 
 const RIR_OPTS = [["", "RIR"], ["0", "0 · max"], ["1", "1 left"], ["2", "2 left"], ["3", "3 left"], ["4", "4+ left"]];
 
@@ -294,8 +295,9 @@ on({
     p.active = null;
     ctx.rest = null;
     save(); closeSheet();
+    const inBite = syncToBite(p) > 0;
     ctx.tab = "today"; render();
-    toast("Workout saved 💪");
+    toast(inBite ? "Workout saved 💪 · added to Bite Club" : "Workout saved 💪");
   },
   "wk-discard": () => {
     if (!confirm("Discard this workout? Nothing from it will be saved.")) return;

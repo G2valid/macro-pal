@@ -9,6 +9,7 @@ import { biteCardio, biteProfile } from "../store.js";
 import { CARDIO_MODES } from "./onboard.js";
 import { beginWorkout } from "./workout.js";
 import { startOnboarding } from "./onboard.js";
+import { syncToBite } from "./sync.js";
 
 export const biteFor = (p) => (d) => (p.biteId ? biteCardio(p.biteId, d) : []);
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -49,7 +50,7 @@ function cardioCard(p, s) {
     <div class="card-head"><h2>${esc(CARDIO_MODES[s.cardio.mode] || "Cardio")}</h2><span class="meta">${s.cardio.minutes} min</span></div>
     <p><b>${inten.label}</b> · effort ${inten.rpe}/10. ${inten.talk} ${evBadge(inten.evidence)}</p>
     ${fromBite.length ? `<div class="note">From Bite Club today: ${fromBite.map((w, i) => `<button class="pill-btn" data-act="cardio-bite" data-id="${s.id}" data-i="${i}">✓ Count ${w.minutes} min ${esc(w.title || w.type)}</button>`).join(" ")}</div>` : ""}
-    <button class="btn secondary" data-act="cardio-log" data-id="${s.id}">Log cardio</button>
+    <div class="btn-row"><button class="btn secondary" data-act="cardio-log" data-id="${s.id}">Log cardio</button><button class="btn secondary" data-act="imp-open">📸 Import screenshot</button></div>
   </div>`;
 }
 
@@ -102,7 +103,7 @@ export function renderToday(el) {
     ${!todays.length && !blockOver ? `<div class="card"><div class="card-head"><h2>😌 Recovery day</h2></div>
       <p>Muscles adapt between sessions, so rest days are part of the plan. An easy walk is great and counts toward your cardio.</p>
       ${next ? `<p class="muted">Next: <b>${esc(sessionLabel(next))}</b> · ${fmtDate(next.date)}</p>` : ""}
-      <div class="btn-row"><button class="btn secondary" data-act="cardio-log" data-id="">Log a walk / cardio</button><button class="btn secondary" data-act="extra-workout">Train anyway</button></div></div>` : ""}
+      <button class="btn secondary" data-act="extra-workout">Train anyway</button></div>` : ""}
     ${missedCard(p)}
     <div class="card">
       <div class="card-head"><h2>This week</h2><button class="pill-btn" data-act="tab" data-v="plan">Plan ›</button></div>
@@ -112,7 +113,9 @@ export function renderToday(el) {
         <div class="stat"><div class="v">${cardio.total}<small>/${cardioTarget}</small></div><div class="k">Cardio minutes</div>${cardio.bite ? `<div class="k">${cardio.bite} from Bite Club</div>` : ""}</div>
       </div>
       <div class="goal-bar"><i style="width:${Math.min(100, (cardio.total / Math.max(1, cardioTarget)) * 100)}%"></i></div>
-    </div>`;
+    </div>
+    <div class="btn-row"><button class="btn secondary" data-act="cardio-log" data-id="">+ Log cardio</button><button class="btn secondary" data-act="imp-open">📸 Import screenshot</button></div>
+    <p class="hint" style="text-align:center;margin:0">Finished workouts and cardio are added to Bite Club's Fitness log automatically.</p>`;
 }
 
 /* ---------------- Cardio logging ---------------- */
@@ -121,6 +124,7 @@ function cardioSheet(sessionId) {
   const s = p.sessions.find((x) => x.id === sessionId);
   const mode = s?.cardio?.mode || p.profile.cardioModes?.[0] || "walking";
   openSheet(`${sheetTitle("Log cardio")}
+    <button class="btn secondary" data-act="imp-open" style="margin-bottom:12px">📸 Import from a screenshot instead</button>
     <form id="cardioForm">
       <label class="field"><span>Activity</span><select name="mode">${Object.entries(CARDIO_MODES).map(([k, l]) => `<option value="${k}" ${k === mode ? "selected" : ""}>${l}</option>`).join("")}</select></label>
       <div class="row2"><label class="field"><span>Minutes</span><input name="minutes" type="number" inputmode="numeric" min="1" required value="${s?.cardio?.minutes || ""}"></label>
@@ -136,7 +140,9 @@ function cardioSheet(sessionId) {
     p.cardioLogs.push({ id: uid(), date: s?.date && s.date <= today() ? s.date : today(), sessionId: s?.id || null, mode: f.mode, minutes: Number(f.minutes) || 0,
       distance: Number(f.distance) || 0, avgHr: Number(f.avgHr) || 0, rpe: Number(f.rpe) || null, source: "manual" });
     if (s) s.status = "done";
-    save(); closeSheet(); render(); toast("Cardio logged 🫀");
+    save(); closeSheet();
+    const inBite = syncToBite(p) > 0;
+    render(); toast(inBite ? "Cardio logged 🫀 · added to Bite Club" : "Cardio logged 🫀");
   });
 }
 

@@ -152,12 +152,15 @@ function computeTargets(p = P()) {
 function dayData(date = currentDay) {
   const p = P();
   p.days ||= {};
-  return p.days[date] || { entries: [], water: 0 };
+  const d = p.days[date];
+  if (d) d.entries ||= []; // days created by the Training Coach may only hold workouts
+  return d || { entries: [], water: 0 };
 }
 function ensureDay(date = currentDay) {
   const p = P();
   p.days ||= {};
   p.days[date] ||= { entries: [], water: 0 };
+  p.days[date].entries ||= [];
   return p.days[date];
 }
 function totals(entries) {
@@ -3804,6 +3807,18 @@ function boot() {
   coachOnOpen();
 }
 boot();
+
+// The Training Coach (train/) adds workouts to this app's saved data. When you
+// come back — including iPhone's swipe-back, which restores the old page from
+// memory — reload from storage first so a later save can't overwrite them.
+function reloadFromStorage() {
+  const fresh = load();
+  if (JSON.stringify(fresh) === JSON.stringify(state)) return;
+  state = fresh;
+  if (P() && $("#sheet").hidden) render();
+}
+window.addEventListener("pageshow", (e) => { if (e.persisted) reloadFromStorage(); });
+window.addEventListener("storage", (e) => { if (e.key === KEY) reloadFromStorage(); });
 
 // Refresh "today" if the app is left open past midnight.
 let lastToday = today();

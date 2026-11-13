@@ -9,7 +9,8 @@ import { renderPlan } from "./ui/plan.js";
 import { renderLibrary, libraryInput } from "./ui/library.js";
 import { renderProgress, progressInput, chartHover } from "./ui/progress.js";
 import { renderSettings, importBackup } from "./ui/settings.js";
-import { markMissed } from "./domain/schedule.js";
+import { importInput, importFiles } from "./ui/import.js";
+import { syncAll } from "./ui/sync.js";
 
 const VIEWS = { today: renderToday, workout: renderWorkout, plan: renderPlan, library: renderLibrary, progress: renderProgress, settings: renderSettings };
 
@@ -45,11 +46,12 @@ document.addEventListener("click", (e) => {
   const fn = actions[act];
   if (fn) { e.preventDefault(); fn(el, e); }
 });
-document.addEventListener("input", (e) => { onboardInput(e) || workoutInput(e) || libraryInput(e) || progressInput(e); });
+document.addEventListener("input", (e) => { onboardInput(e) || workoutInput(e) || libraryInput(e) || progressInput(e) || importInput(e); });
 document.addEventListener("pointermove", chartHover);
 document.addEventListener("pointerdown", chartHover);
 $("#backdrop").addEventListener("click", closeSheet);
 $("#profileChip").addEventListener("click", () => { ctx.tab = "settings"; render(); });
+$("#shotInput").addEventListener("change", (e) => { const f = [...e.target.files]; e.target.value = ""; importFiles(f); });
 $("#importInput").addEventListener("change", (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) importBackup(f); });
 
 // Clock: rest timer and the workout's elapsed time.
@@ -74,8 +76,11 @@ document.addEventListener("visibilitychange", () => {
   // Sessions in the past that were never done are shown as missed (kept as "planned" in storage).
   if (ctx.state.activeId && !ctx.state.people[ctx.state.activeId]) ctx.state.activeId = Object.keys(ctx.state.people)[0] || null;
   if (me()?.active) ctx.tab = "workout";
+  // Copy any finished workouts/cardio Bite Club doesn't have yet (incl. ones done before syncing existed).
+  const synced = syncAll();
   applyTheme();
   render();
+  if (synced) toast(`Added ${synced} workout${synced > 1 ? "s" : ""} to Bite Club's log`);
   requestPersistence();
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js", { scope: "./" }).catch(() => {});
 })();
