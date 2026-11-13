@@ -119,13 +119,13 @@ export function repsSeries(person, exerciseId) {
 }
 
 /**
- * Cardio minutes in [from, to]: trainer-logged sessions plus Bite Club cardio
- * (passed in as a function so this stays pure). Entries linked from Bite Club
- * are only counted once.
+ * Cardio minutes in [from, to]. Bite Club's workout log is the single record
+ * (passed in as a function so this stays pure); trainer cardio only counts
+ * here until it has been copied into that log, so nothing is counted twice.
  */
 export function cardioMinutes(person, from, to, biteCardioFor = () => []) {
   let own = 0, bite = 0;
-  for (const c of person.cardioLogs || []) if (c.date >= from && c.date <= to && c.source !== "bite") own += c.minutes || 0;
+  for (const c of person.cardioLogs || []) if (c.date >= from && c.date <= to && c.source !== "bite" && !c.biteSynced) own += c.minutes || 0;
   for (let d = from; d <= to; d = addDays(d, 1)) bite += biteCardioFor(d).reduce((t, w) => t + (w.minutes || 0), 0);
   return { own, bite, total: own + bite };
 }

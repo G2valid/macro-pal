@@ -2,8 +2,10 @@
 
 import { ctx, me, save, render, toast, esc, today, on, openSheet, closeSheet, sheetTitle, fmtDate, fmtRest, evBadge, $ } from "./core.js";
 import { EX, EXERCISES, alternativesFor, similarFor, hasEquipment } from "../domain/exercises.js";
-import { MUSCLES, TRACKED_MUSCLES, PATTERNS } from "../domain/vocab.js";
-import { SPLITS, weeklyVolume, estimateMinutes } from "../domain/generate.js";
+import { MUSCLES, TRACKED_MUSCLES, PATTERNS, GOALS, EXPERIENCE } from "../domain/vocab.js";
+import { SPLITS, weeklyVolume, estimateMinutes, generateProgram } from "../domain/generate.js";
+import { rebuildPlan } from "./onboard.js";
+import "./settings.js";
 import { prescriptionFor, STYLE_NOTES } from "../domain/prescribe.js";
 import { addDays, weekStart, moveSession, shiftFrom, parseYmd, ymd, INTENSITY } from "../domain/schedule.js";
 import { templateOf } from "../domain/history.js";
@@ -18,14 +20,14 @@ const stOf = (s) => (s.status === "planned" && s.date < today() ? "missed" : s.s
 
 function weekView(p) {
   const ws = addDays(weekStart(today()), ctx.planWeekOffset * 7);
-  return `<div class="nav-row"><button class="icon-btn" data-act="pw" data-v="-1" aria-label="Previous week">‹</button>
+  return `<div class="nav-row"><button class="icon-btn" data-ta="pw" data-v="-1" aria-label="Previous week">‹</button>
     <b>${fmtDate(ws, { month: "short", day: "numeric" })} – ${fmtDate(addDays(ws, 6), { month: "short", day: "numeric" })}</b>
-    <button class="icon-btn" data-act="pw" data-v="1" aria-label="Next week">›</button></div>
+    <button class="icon-btn" data-ta="pw" data-v="1" aria-label="Next week">›</button></div>
     <div class="list">${DAYS.map((d, i) => {
       const date = addDays(ws, i);
       const ss = p.sessions.filter((s) => s.date === date);
       return `<div class="day-row ${date === today() ? "today" : ""}"><div class="dl"><b>${d}</b><span class="muted small">${parseYmd(date).getDate()}</span></div>
-        <div class="grow">${ss.length ? ss.map((s) => `<button class="sess ${s.kind} ${stOf(s)}" data-act="sess" data-id="${s.id}"><span>${s.kind === "lift" ? "🏋️" : "🫀"} ${esc(sessionLabel(s))}</span><i>${statusIcon[stOf(s)] || ""}</i></button>`).join("") : `<span class="muted small">Rest</span>`}</div></div>`;
+        <div class="grow">${ss.length ? ss.map((s) => `<button class="sess ${s.kind} ${stOf(s)}" data-ta="sess" data-id="${s.id}"><span>${s.kind === "lift" ? "🏋️" : "🫀"} ${esc(sessionLabel(s))}</span><i>${statusIcon[stOf(s)] || ""}</i></button>`).join("") : `<span class="muted small">Rest</span>`}</div></div>`;
     }).join("")}</div>
     <p class="hint">Tap a session to start, move or skip it. Moving onto another workout swaps the two.</p>`;
 }
@@ -40,12 +42,12 @@ function monthView(p) {
     const date = addDays(gridStart, i);
     if (i >= 35 && parseYmd(date).getMonth() !== month) break;
     const ss = p.sessions.filter((s) => s.date === date);
-    cells.push(`<button class="mc ${parseYmd(date).getMonth() !== month ? "out" : ""} ${date === today() ? "today" : ""}" data-act="plan-day" data-date="${date}">
+    cells.push(`<button class="mc ${parseYmd(date).getMonth() !== month ? "out" : ""} ${date === today() ? "today" : ""}" data-ta="plan-day" data-date="${date}">
       <span>${parseYmd(date).getDate()}</span><div class="dots">${ss.map((s) => `<i class="${s.kind} ${stOf(s)}"></i>`).join("")}</div></button>`);
   }
-  return `<div class="nav-row"><button class="icon-btn" data-act="pm" data-v="-1" aria-label="Previous month">‹</button>
+  return `<div class="nav-row"><button class="icon-btn" data-ta="pm" data-v="-1" aria-label="Previous month">‹</button>
     <b>${base.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</b>
-    <button class="icon-btn" data-act="pm" data-v="1" aria-label="Next month">›</button></div>
+    <button class="icon-btn" data-ta="pm" data-v="1" aria-label="Next month">›</button></div>
     <div class="card"><div class="mgrid">${DAYS.map((d) => `<span class="mh">${d[0]}</span>`).join("")}${cells.join("")}</div>
     <div class="legend mlegend"><span><span class="ld lift"></span>Lifting</span><span><span class="ld cardio"></span>Cardio</span><span><span class="ld lift done"></span>Done</span><span><span class="ld lift missed"></span>Missed</span></div></div>`;
 }
@@ -73,18 +75,35 @@ function programView(p) {
     <div class="card"><div class="card-head"><h2>Weekly volume</h2></div>${volumeBars(p)}</div>
     ${pg.templates.map((t) => `<div class="card">
       <div class="card-head"><h2>${esc(t.name)}</h2><span class="meta">~${estimateMinutes(t.slots)} min</span></div>
-      ${t.slots.map((s, i) => `<button class="slot" data-act="slot" data-t="${t.id}" data-i="${i}">
+      ${t.slots.map((s, i) => `<button class="slot" data-ta="slot" data-t="${t.id}" data-i="${i}">
         <div class="grow"><b>${esc(EX[s.exerciseId].name)}</b><div class="small muted">${EX[s.exerciseId].primary.map((m) => MUSCLES[m]).join(", ")}${s.priority ? " · ★ priority" : ""}</div></div>
         <div class="rxs num"><b>${s.sets} × ${s.repLow === s.repHigh ? s.repLow : `${s.repLow}–${s.repHigh}`}${s.unit === "sec" ? "s" : ""}</b><span>${s.rir} RIR · ${fmtRest(s.rest)}</span></div></button>`).join("")}
-      <button class="pill-btn" data-act="slot-add" data-t="${t.id}" style="margin-top:10px">+ Add exercise</button>
+      <button class="pill-btn" data-ta="slot-add" data-t="${t.id}" style="margin-top:10px">+ Add exercise</button>
     </div>`).join("")}
     <div class="card"><h3>Progression</h3><p class="small">Each exercise uses <b>double progression</b>: work within the rep range; when every set reaches the top at the planned effort, the weight goes up by the smallest step you have, and you build the reps back up. Two tough sessions in a row at the same weight → it drops ~10% and rebuilds. Pain → it never goes up. ${evBadge("practice")}</p></div>
-    <button class="btn secondary" data-act="replan">Change my answers / rebuild plan</button>`;
+    <div class="list">
+      <button data-ta="replan"><span>Full questionnaire</span><span class="v">Equipment, injuries, cardio… ›</span></button>
+      <button data-ta="loads"><span>Weights you have</span><span class="v">Dumbbells, plates, machine steps ›</span></button>
+      <button data-ta="delete-training"><span style="color:var(--danger)">Delete my training data</span><span></span></button>
+    </div>`;
+}
+
+const DAYNAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function planSummary(p) {
+  const pr = p.profile;
+  return `<div class="card">
+    <div class="card-head"><h2>Your plan</h2><button class="pill-btn" data-ta="plan-change">Change</button></div>
+    <div class="kv"><span>Goal</span><b>${GOALS[pr.primary]?.emo || ""} ${GOALS[pr.primary]?.label || ""}${pr.secondary?.length ? ` + ${pr.secondary.map((g) => GOALS[g]?.label.toLowerCase()).join(", ")}` : ""}</b></div>
+    <div class="kv"><span>Level</span><b>${EXPERIENCE[pr.experience]?.label || ""}</b></div>
+    <div class="kv"><span>Schedule</span><b>${pr.days.map((d) => DAYNAMES[d]).join(", ")} · ${pr.minutes} min</b></div>
+    <div class="kv"><span>Split</span><b>${SPLITS[p.program.split].label}</b></div>
+  </div>`;
 }
 
 export function renderPlan(el) {
   const p = me();
-  el.innerHTML = `<div class="seg">${[["week", "Week"], ["month", "Month"], ["program", "Program"]].map(([k, l]) => `<button class="${ctx.planMode === k ? "on" : ""}" data-act="pmode" data-v="${k}">${l}</button>`).join("")}</div>
+  el.innerHTML = `${planSummary(p)}<div class="seg">${[["week", "Week"], ["month", "Month"], ["program", "Program"]].map(([k, l]) => `<button class="${ctx.planMode === k ? "on" : ""}" data-ta="pmode" data-v="${k}">${l}</button>`).join("")}</div>
     ${ctx.planMode === "week" ? weekView(p) : ctx.planMode === "month" ? monthView(p) : programView(p)}`;
 }
 
@@ -101,12 +120,12 @@ function sessionSheet(id) {
     ${t ? `<div class="card">${t.slots.map((x) => `<div class="mini-ex"><span>${esc(EX[x.exerciseId].name)}</span><span class="muted num">${x.sets} × ${x.repLow}–${x.repHigh}${x.unit === "sec" ? "s" : ""}</span></div>`).join("")}</div>` : ""}
     ${s.kind === "cardio" ? `<div class="card"><p><b>${INTENSITY[s.cardio.intensity].label}</b> · effort ${INTENSITY[s.cardio.intensity].rpe}/10 — ${INTENSITY[s.cardio.intensity].talk}</p></div>` : ""}
     ${s.status !== "done" ? `
-      ${s.kind === "lift" ? `<button class="btn" data-act="start" data-id="${s.id}">${s.date === today() ? "Start workout" : "Do it today"}</button>` : `<button class="btn" data-act="cardio-log" data-id="${s.id}">Log it</button>`}
+      ${s.kind === "lift" ? `<button class="btn" data-ta="start" data-id="${s.id}">${s.date === today() ? "Start workout" : "Do it today"}</button>` : `<button class="btn" data-ta="cardio-log" data-id="${s.id}">Log it</button>`}
       <h3 style="margin:16px 0 8px">Move to</h3>
-      <div class="chips">${quick.map((d) => `<button class="chip" data-act="sess-move" data-id="${s.id}" data-date="${d}">${d === today() ? "Today" : fmtDate(d, { weekday: "short", day: "numeric" })}</button>`).join("")}</div>
+      <div class="chips">${quick.map((d) => `<button class="chip" data-ta="sess-move" data-id="${s.id}" data-date="${d}">${d === today() ? "Today" : fmtDate(d, { weekday: "short", day: "numeric" })}</button>`).join("")}</div>
       <label class="field" style="margin-top:10px"><span>Or pick a date</span><input type="date" id="moveDate" min="${today()}"></label>
-      <div class="btn-row"><button class="btn secondary" data-act="sess-move-pick" data-id="${s.id}">Move</button><button class="btn secondary" data-act="sess-shift" data-id="${s.id}">Push plan back a day</button></div>
-      <button class="btn danger" data-act="sess-skip" data-id="${s.id}">${s.status === "skipped" ? "Un-skip" : "Skip this session"}</button>` : ""}`);
+      <div class="btn-row"><button class="btn secondary" data-ta="sess-move-pick" data-id="${s.id}">Move</button><button class="btn secondary" data-ta="sess-shift" data-id="${s.id}">Push plan back a day</button></div>
+      <button class="btn danger" data-ta="sess-skip" data-id="${s.id}">${s.status === "skipped" ? "Un-skip" : "Skip this session"}</button>` : ""}`);
 }
 
 function doMove(id, date) {
@@ -131,20 +150,20 @@ function slotSheet(tid, i) {
   const alts = alternativesFor(s.exerciseId, p.profile.equipment);
   const sim = similarFor(s.exerciseId, p.profile.equipment);
   const avoid = Object.keys(p.profile.limits || {}).filter((j) => p.profile.limits[j] === "avoid");
-  const num = (k, label, step = 1, min = 0) => `<label class="field"><span>${label}</span><div class="stepper"><button type="button" data-act="slot-step" data-k="${k}" data-d="${-step}" data-t="${tid}" data-i="${i}">−</button><b class="num">${k === "rest" ? fmtRest(s[k]) : s[k]}</b><button type="button" data-act="slot-step" data-k="${k}" data-d="${step}" data-t="${tid}" data-i="${i}">+</button></div></label>`;
+  const num = (k, label, step = 1, min = 0) => `<label class="field"><span>${label}</span><div class="stepper"><button type="button" data-ta="slot-step" data-k="${k}" data-d="${-step}" data-t="${tid}" data-i="${i}">−</button><b class="num">${k === "rest" ? fmtRest(s[k]) : s[k]}</b><button type="button" data-ta="slot-step" data-k="${k}" data-d="${step}" data-t="${tid}" data-i="${i}">+</button></div></label>`;
   openSheet(`${sheetTitle(esc(ex.name))}
-    <button class="link" data-act="ex-info" data-id="${ex.id}">How to do it ›</button>
+    <button class="link" data-ta="ex-info" data-id="${ex.id}">How to do it ›</button>
     <div class="card" style="margin-top:10px">
       <div class="row2">${num("sets", "Sets")}${num("rir", "Reps in reserve")}</div>
       <div class="row2">${num("repLow", s.unit === "sec" ? "Min seconds" : "Min reps", s.unit === "sec" ? 5 : 1)}${num("repHigh", s.unit === "sec" ? "Max seconds" : "Max reps", s.unit === "sec" ? 5 : 1)}</div>
       ${num("rest", "Rest", 15)}
       <p class="hint">Reps in reserve = how many more reps you could have done. 0 is failure; 1–3 is where most productive sets land ${evBadge("moderate")}.</p>
     </div>
-    <div class="btn-row"><button class="btn secondary" data-act="slot-up" data-t="${tid}" data-i="${i}" ${i === 0 ? "disabled" : ""}>Move up</button><button class="btn secondary" data-act="slot-down" data-t="${tid}" data-i="${i}" ${i === t.slots.length - 1 ? "disabled" : ""}>Move down</button></div>
+    <div class="btn-row"><button class="btn secondary" data-ta="slot-up" data-t="${tid}" data-i="${i}" ${i === 0 ? "disabled" : ""}>Move up</button><button class="btn secondary" data-ta="slot-down" data-t="${tid}" data-i="${i}" ${i === t.slots.length - 1 ? "disabled" : ""}>Move down</button></div>
     <h3 style="margin:16px 0 8px">Swap for</h3>
     ${swapList(alts, i, avoid, "slot-swap", `data-t="${tid}"`) || `<div class="empty">No same-movement alternatives with your equipment.</div>`}
     ${sim.length ? `<h3 style="margin:14px 0 8px">Similar — works the same muscles</h3>${swapList(sim, i, avoid, "slot-swap", `data-t="${tid}"`)}` : ""}
-    <button class="btn danger" data-act="slot-del" data-t="${tid}" data-i="${i}" style="margin-top:12px">Remove from ${esc(t.name)}</button>`);
+    <button class="btn danger" data-ta="slot-del" data-t="${tid}" data-i="${i}" style="margin-top:12px">Remove from ${esc(t.name)}</button>`);
 }
 
 function addSheet(tid, q = "") {
@@ -152,7 +171,7 @@ function addSheet(tid, q = "") {
   const list = EXERCISES.filter((e) => hasEquipment(e, p.profile.equipment) && (!q || e.name.toLowerCase().includes(q.toLowerCase()) || e.primary.some((m) => MUSCLES[m].toLowerCase().includes(q.toLowerCase()))));
   openSheet(`${sheetTitle("Add exercise")}
     <input class="input search" id="addQ" placeholder="Search by name or muscle" value="${esc(q)}" autocomplete="off">
-    <div class="food-list">${list.map((e) => `<button class="food-item" data-act="slot-add-pick" data-t="${tid}" data-id="${e.id}"><div class="grow"><b>${esc(e.name)}</b><div class="small muted">${e.primary.map((m) => MUSCLES[m]).join(", ")}</div></div><span>+</span></button>`).join("")}</div>`);
+    <div class="food-list">${list.map((e) => `<button class="food-item" data-ta="slot-add-pick" data-t="${tid}" data-id="${e.id}"><div class="grow"><b>${esc(e.name)}</b><div class="small muted">${e.primary.map((m) => MUSCLES[m]).join(", ")}</div></div><span>+</span></button>`).join("")}</div>`);
   const inp = $("#addQ");
   inp.addEventListener("input", () => { const v = inp.value; addSheet(tid, v); const n = $("#addQ"); n.focus(); n.setSelectionRange(v.length, v.length); });
 }
@@ -168,7 +187,7 @@ on({
     const ss = me().sessions.filter((s) => s.date === el.dataset.date);
     if (ss.length === 1) return sessionSheet(ss[0].id);
     if (!ss.length) return toast(`${fmtDate(el.dataset.date)}: rest day`);
-    openSheet(`${sheetTitle(fmtDate(el.dataset.date))}<div class="food-list">${ss.map((s) => `<button class="food-item" data-act="sess" data-id="${s.id}"><div class="grow"><b>${esc(sessionLabel(s))}</b></div><span>›</span></button>`).join("")}</div>`);
+    openSheet(`${sheetTitle(fmtDate(el.dataset.date))}<div class="food-list">${ss.map((s) => `<button class="food-item" data-ta="sess" data-id="${s.id}"><div class="grow"><b>${esc(sessionLabel(s))}</b></div><span>›</span></button>`).join("")}</div>`);
   },
   "sess-move": (el) => doMove(el.dataset.id, el.dataset.date),
   "sess-move-pick": (el) => { const d = $("#moveDate").value; if (!d) return toast("Pick a date first"); doMove(el.dataset.id, d); },
@@ -201,5 +220,65 @@ on({
     t.slots.push({ id: `s${Date.now().toString(36)}`, pattern: ex.pattern, role: "accessory", exerciseId: ex.id, ...rx });
     recompute(p); save(); closeSheet(); render(); toast(`Added ${ex.name}`);
   },
-  replan: () => import("./onboard.js").then((m) => m.startOnboarding(me().id)),
+  replan: () => { draft = null; closeSheet(); import("./onboard.js").then((m) => m.startOnboarding(me().id)); },
 });
+
+/* ---------------- Quick change: goal, level, days, time ---------------- */
+let draft = null;
+
+function changeSheet() {
+  const p = me();
+  draft ||= { primary: p.profile.primary, experience: p.profile.experience, days: [...p.profile.days], minutes: p.profile.minutes };
+  openSheet(`${sheetTitle("Change my plan")}
+    <label class="field"><span>Goal</span><select data-pc="primary">${Object.entries(GOALS).map(([k, g]) => `<option value="${k}" ${draft.primary === k ? "selected" : ""}>${g.emo} ${g.label}</option>`).join("")}</select></label>
+    ${draft.primary === "definition" ? `<p class="hint" style="margin-top:-6px">"Toned" means building some muscle while losing fat. You'll lift with real effort (no special light "toning" weights) and Bite Club handles the calorie side.</p>` : ""}
+    <label class="field"><span>Level</span><select data-pc="experience">${Object.entries(EXPERIENCE).map(([k, v]) => `<option value="${k}" ${draft.experience === k ? "selected" : ""}>${v.label}</option>`).join("")}</select></label>
+    <label class="field"><span>Days you can train</span></label>
+    <div class="day-pick">${DAYNAMES.map((d, i) => `<button type="button" class="${draft.days.includes(i) ? "on" : ""}" data-ta="pc-day" data-v="${i}">${d}</button>`).join("")}</div>
+    <label class="field" style="margin-top:14px"><span>Minutes per workout</span></label>
+    <div class="seg">${[30, 45, 60, 75, 90].map((m) => `<button type="button" class="${draft.minutes === m ? "on" : ""}" data-ta="pc-min" data-v="${m}">${m}</button>`).join("")}</div>
+    <button class="btn" data-ta="pc-preview" ${draft.days.length ? "" : "disabled"}>Preview new plan</button>
+    <button class="btn secondary" data-ta="replan">More changes (equipment, injuries, cardio…)</button>`, () => (draft = null));
+}
+
+function previewSheet() {
+  const p = me();
+  const profile = { ...p.profile, ...draft, days: [...draft.days].sort(), offFor: draft.experience === "returning" ? p.profile.offFor || "6-12m" : p.profile.offFor };
+  const program = generateProgram(profile, { weeks: p.program.weeks });
+  const byDow = Object.fromEntries(program.weekPlan.map((x) => [x.dow, x]));
+  draft.preview = { profile, program };
+  $("#sheetBody").innerHTML = `${sheetTitle("New plan preview")}
+    <div class="card"><div class="card-head"><h2>${SPLITS[program.split].label}</h2><span class="meta">${GOALS[profile.primary].label}</span></div>
+      <div class="weekrow">${DAYNAMES.map((d, i) => { const x = byDow[i]; const t = x?.kind === "lift" ? program.templates.find((y) => y.id === x.templateId) : null;
+        return `<div class="wd ${x ? x.kind : "rest"}"><span>${d}</span><b>${t ? esc(t.name.replace("Full Body", "Full")) : x ? "Cardio" : "Rest"}</b></div>`; }).join("")}</div>
+      <ul class="reasons">${program.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul></div>
+    ${program.templates.map((t) => `<div class="card"><div class="card-head"><h2>${esc(t.name)}</h2><span class="meta">~${t.estMinutes} min</span></div>
+      ${t.slots.map((x) => `<div class="mini-ex"><span>${esc(EX[x.exerciseId].name)}</span><span class="muted num">${x.sets} × ${x.repLow}–${x.repHigh}${x.unit === "sec" ? "s" : ""}</span></div>`).join("")}</div>`).join("")}
+    <button class="btn" data-ta="pc-apply">Use this plan</button>
+    <button class="btn secondary" data-ta="plan-change">Back</button>
+    <p class="hint" style="text-align:center">Your workout history, records and weights are kept — only upcoming sessions change.</p>`;
+  $("#sheetBody").scrollTop = 0;
+}
+
+on({
+  "plan-change": () => changeSheet(),
+  "pc-day": (el) => { const d = Number(el.dataset.v); draft.days = draft.days.includes(d) ? draft.days.filter((x) => x !== d) : [...draft.days, d]; changeSheet(); },
+  "pc-min": (el) => { draft.minutes = Number(el.dataset.v); changeSheet(); },
+  "pc-preview": () => previewSheet(),
+  "pc-apply": () => {
+    const p = me();
+    const { profile, program } = draft.preview;
+    rebuildPlan(p, profile, program, today());
+    draft = null;
+    save(); closeSheet(); ctx.planMode = "week"; render(); toast("Plan updated 💪");
+  },
+});
+
+/** Goal/level dropdowns in the change sheet. */
+export function planInput(e) {
+  const k = e.target.dataset.pc;
+  if (!k || !draft) return false;
+  draft[k] = e.target.value;
+  changeSheet();
+  return true;
+}

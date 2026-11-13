@@ -42,7 +42,7 @@ function targetLine(e) {
     default: head = w ? `${fmtLb(t.weight)} × ${t.reps}${unit}` : `${t.reps}${unit} per set`;
   }
   return `<details class="target t-${t.action}"><summary><b>${head}</b><span class="why-tag">why?</span></summary><p>${esc(t.why)}</p>
-    ${t.action === "level_up" ? `<button class="pill-btn" data-act="wk-levelup" data-i="${e._i}">Switch to ${esc(EX[t.exerciseId].name)}</button>` : ""}</details>`;
+    ${t.action === "level_up" ? `<button class="pill-btn" data-ta="wk-levelup" data-i="${e._i}">Switch to ${esc(EX[t.exerciseId].name)}</button>` : ""}</details>`;
 }
 
 function lastTime(e) {
@@ -75,7 +75,7 @@ function setRow(e, i, s, j) {
     ${w ? `<label class="cell"><input type="number" inputmode="decimal" step="any" data-wk="weight" data-i="${i}" data-j="${j}" value="${s.weight ?? ""}" placeholder="lb" ${s.done ? "disabled" : ""}><small>lb</small></label>` : `<span class="cell bw">${ex.load === "band" ? "band" : sec ? "" : "BW"}</span>`}
     <label class="cell"><input type="number" inputmode="numeric" data-wk="reps" data-i="${i}" data-j="${j}" value="${s.reps ?? ""}" placeholder="${s.target ?? e.rx.repLow}" ${s.done ? "disabled" : ""}><small>${sec ? "sec" : "reps"}</small></label>
     <select data-wk="rir" data-i="${i}" data-j="${j}" aria-label="Reps in reserve" ${s.done ? "disabled" : ""}>${RIR_OPTS.map(([v, l]) => `<option value="${v}" ${String(s.rir ?? "") === v ? "selected" : ""}>${l}</option>`).join("")}</select>
-    <button class="chk" data-act="wk-set" data-i="${i}" data-j="${j}" aria-label="${s.done ? "Undo set" : "Complete set"}">${s.done ? "✓" : ""}</button>
+    <button class="chk" data-ta="wk-set" data-i="${i}" data-j="${j}" aria-label="${s.done ? "Undo set" : "Complete set"}">${s.done ? "✓" : ""}</button>
   </div>`;
 }
 
@@ -88,7 +88,7 @@ export function renderWorkout(el) {
   el.innerHTML = `
     <div class="wk-head card">
       <div><h2>${esc(log.name)}</h2><span class="muted small"><span id="wkElapsed" class="num">${fmtDur((Date.now() - log.startedAt) / 1000)}</span> · ${done}/${total} sets</span></div>
-      <button class="pill-btn" data-act="wk-short">⏱ Short on time</button>
+      <button class="pill-btn" data-ta="wk-short">⏱ Short on time</button>
     </div>
     ${log.easeIn ? `<div class="note">Ease-in week: 2 sets per exercise, stopping with 3+ reps in reserve. Focus on smooth technique — the volume comes up next week.</div>` : ""}
     ${log.trimNotes?.length ? `<div class="note">Trimmed to fit your time: ${log.trimNotes.map(esc).join(" ")}</div>` : ""}
@@ -98,7 +98,7 @@ export function renderWorkout(el) {
       const doneSets = e.sets.filter((s) => s.done).length;
       return `<div class="card ex-card ${doneSets === e.sets.length ? "complete" : ""}" id="ex-${i}">
         <div class="ex-head">
-          <button class="ex-name" data-act="ex-info" data-id="${ex.id}"><h3>${esc(ex.name)}</h3><span class="muted small">${ex.primary.map((m) => MUSCLES[m]).join(", ")} · how-to ›</span></button>
+          <button class="ex-name" data-ta="ex-info" data-id="${ex.id}"><h3>${esc(ex.name)}</h3><span class="muted small">${ex.primary.map((m) => MUSCLES[m]).join(", ")} · how-to ›</span></button>
           <span class="badge">${doneSets}/${e.sets.length}</span>
         </div>
         <div class="rx small">${e.sets.length} × ${repsText(e.rx)} · ~${e.rx.rir} in reserve · rest ${fmtRest(e.rx.rest)}${ex.uni ? " · each side" : ""}</div>
@@ -106,17 +106,17 @@ export function renderWorkout(el) {
         ${lastTime(e)}
         ${warmups(e)}
         <div class="sets">${e.sets.map((s, j) => setRow(e, i, s, j)).join("")}</div>
-        ${e.adjust ? `<div class="adjust small">${esc(e.adjust.why)} <button class="pill-btn" data-act="wk-apply" data-i="${i}">Use ${e.adjust.weight} lb</button></div>` : ""}
+        ${e.adjust ? `<div class="adjust small">${esc(e.adjust.why)} <button class="pill-btn" data-ta="wk-apply" data-i="${i}">Use ${e.adjust.weight} lb</button></div>` : ""}
         <div class="ex-actions">
-          <button data-act="wk-addset" data-i="${i}">+ Set</button>
-          <button data-act="wk-swap" data-i="${i}">⇄ Swap</button>
-          <button data-act="wk-pain" data-i="${i}" class="${e.pain ? "on" : ""}">🩹 ${e.pain ? "Pain noted" : "Pain"}</button>
+          <button data-ta="wk-addset" data-i="${i}">+ Set</button>
+          <button data-ta="wk-swap" data-i="${i}">⇄ Swap</button>
+          <button data-ta="wk-pain" data-i="${i}" class="${e.pain ? "on" : ""}">🩹 ${e.pain ? "Pain noted" : "Pain"}</button>
         </div>
       </div>`;
     }).join("")}
     <div class="card"><label class="field" style="margin:0"><span>Workout notes</span><textarea data-wk="notes" rows="2" placeholder="How did it go?">${esc(log.notes)}</textarea></label></div>
-    <button class="btn" data-act="wk-finish">Finish workout</button>
-    <button class="btn danger" data-act="wk-discard">Discard workout</button>`;
+    <button class="btn" data-ta="wk-finish">Finish workout</button>
+    <button class="btn danger" data-ta="wk-discard">Discard workout</button>`;
 }
 
 /** Field edits during a workout: update and autosave without re-rendering. */
@@ -245,7 +245,7 @@ on({
   "wk-short": () => {
     openSheet(`${sheetTitle("Short on time?")}
       <p class="muted">How many minutes do you have left? Exercises you haven't started are trimmed — accessories go first, your main lifts stay.</p>
-      <div class="chips">${[15, 20, 25, 30, 40, 50].map((m) => `<button class="chip" data-act="wk-trim" data-v="${m}">${m} min</button>`).join("")}</div>`);
+      <div class="chips">${[15, 20, 25, 30, 40, 50].map((m) => `<button class="chip" data-ta="wk-trim" data-v="${m}">${m} min</button>`).join("")}</div>`);
   },
   "wk-trim": (el) => {
     const L = log();
@@ -280,8 +280,8 @@ on({
       <div class="stat"><div class="v">${sum.volume.toLocaleString()}</div><div class="k">lb lifted</div></div></div>
       ${L.prs?.length ? `<div class="note" style="margin-top:12px">🏆 ${L.prs.map((p) => `<b>${esc(EX[p.exerciseId].name)}</b> — ${esc(p.label)}`).join("<br>🏆 ")}</div>` : ""}
       ${skipped ? `<p class="muted small" style="margin-top:12px">${skipped} exercise${skipped > 1 ? "s" : ""} not done — that's fine; they're simply skipped.</p>` : ""}
-      <button class="btn" data-act="wk-save" style="margin-top:12px">Save workout</button>
-      <button class="btn secondary" data-act="close">Keep going</button>`);
+      <button class="btn" data-ta="wk-save" style="margin-top:12px">Save workout</button>
+      <button class="btn secondary" data-ta="close">Keep going</button>`);
   },
   "wk-save": () => {
     const p = me(), L = p.active;
@@ -295,9 +295,9 @@ on({
     p.active = null;
     ctx.rest = null;
     save(); closeSheet();
-    const inBite = syncToBite(p) > 0;
+    syncToBite(p); // add it to the Fitness log
     ctx.tab = "today"; render();
-    toast(inBite ? "Workout saved 💪 · added to Bite Club" : "Workout saved 💪");
+    toast("Workout saved 💪");
   },
   "wk-discard": () => {
     if (!confirm("Discard this workout? Nothing from it will be saved.")) return;
@@ -355,6 +355,6 @@ const LEVEL = ["", "Beginner", "Intermediate", "Advanced"];
 /** A list of swap choices (shared with the Plan editor). */
 export function swapList(list, i, avoid, act, extra = "") {
   if (!list.length) return "";
-  return `<div class="food-list">${list.map((a) => `<button class="food-item" data-act="${act}" data-i="${i}" data-id="${a.id}" ${extra}>
+  return `<div class="food-list">${list.map((a) => `<button class="food-item" data-ta="${act}" data-i="${i}" data-id="${a.id}" ${extra}>
     <div class="grow"><b>${esc(a.name)}</b><div class="small muted">${LEVEL[a.level]} · ${a.primary.map((m) => MUSCLES[m]).join(", ")}${a.joints.some((j) => avoid.includes(j)) ? " · ⚠️ loads an area you're avoiding" : ""}</div></div><span>⇄</span></button>`).join("")}</div>`;
 }

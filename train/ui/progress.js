@@ -119,19 +119,19 @@ export function renderProgress(el) {
 
     <div class="card"><div class="card-head"><h2>Cardio minutes</h2><span class="meta">last 8 weeks</span></div>
       ${barChart("cardio", cardioBars, cardioTarget)}
-      <p class="hint">Includes cardio logged in Bite Club.</p></div>
+      <p class="hint">All cardio in your Fitness log, including screenshot imports.</p></div>
 
-    ${weights.length >= 2 ? `<div class="card"><div class="card-head"><h2>Bodyweight</h2><span class="meta">from Bite Club</span></div>
+    ${weights.length >= 2 ? `<div class="card"><div class="card-head"><h2>Bodyweight</h2><span class="meta">from your weigh-ins</span></div>
       ${lineChart("bw", weights.map((w) => ({ y: w.kg / 0.45359237, label: short(w.date), tip: `${short(w.date)}: ${(w.kg / 0.45359237).toFixed(1)} lb` })))}</div>` : ""}
 
     <div class="card"><div class="card-head"><h2>Personal records</h2></div>
-      ${Object.values(prs).length ? `<div class="list flat">${Object.values(prs).sort((a, b) => EX[a.exerciseId].name.localeCompare(EX[b.exerciseId].name)).map((r) => `<button data-act="ex-info" data-id="${r.exerciseId}"><span>${esc(EX[r.exerciseId].name)}</span><span class="v">${r.bestE1rmSet ? `${r.bestE1rmSet.weight} lb × ${r.bestE1rmSet.reps}${r.heaviest > r.bestE1rmSet.weight ? ` · top ${r.heaviest} lb` : ""}` : `${r.mostReps} reps`}</span></button>`).join("")}</div>` : `<p class="muted">Records appear as you log workouts.</p>`}</div>
+      ${Object.values(prs).length ? `<div class="list flat">${Object.values(prs).sort((a, b) => EX[a.exerciseId].name.localeCompare(EX[b.exerciseId].name)).map((r) => `<button data-ta="ex-info" data-id="${r.exerciseId}"><span>${esc(EX[r.exerciseId].name)}</span><span class="v">${r.bestE1rmSet ? `${r.bestE1rmSet.weight} lb × ${r.bestE1rmSet.reps}${r.heaviest > r.bestE1rmSet.weight ? ` · top ${r.heaviest} lb` : ""}` : `${r.mostReps} reps`}</span></button>`).join("")}</div>` : `<p class="muted">Records appear as you log workouts.</p>`}</div>
 
     <div class="card"><div class="card-head"><h2>History</h2></div>
-      ${logs.length ? `<div class="list flat">${[...logs].sort((a, b) => b.date.localeCompare(a.date) || b.startedAt - a.startedAt).slice(0, 30).map((l) => { const s = workoutSummary(l); return `<button data-act="log" data-id="${l.id}"><span><b>${esc(l.name)}</b><br><span class="small muted">${fmtDate(l.date)}</span></span><span class="v">${s.sets} sets · ${s.minutes} min</span></button>`; }).join("")}</div>` : `<p class="muted">No workouts yet.</p>`}</div>`;
+      ${logs.length ? `<div class="list flat">${[...logs].sort((a, b) => b.date.localeCompare(a.date) || b.startedAt - a.startedAt).slice(0, 30).map((l) => { const s = workoutSummary(l); return `<button data-ta="log" data-id="${l.id}"><span><b>${esc(l.name)}</b><br><span class="small muted">${fmtDate(l.date)}</span></span><span class="v">${s.sets} sets · ${s.minutes} min</span></button>`; }).join("")}</div>` : `<p class="muted">No workouts yet.</p>`}</div>`;
 }
 
-function logSheet(id) {
+export function logSheet(id) {
   const l = me().logs.find((x) => x.id === id);
   if (!l) return;
   const s = workoutSummary(l);
@@ -141,7 +141,7 @@ function logSheet(id) {
       <div class="small muted">${workingSets(e).map((x) => `${x.weight ? `${x.weight}×` : ""}${x.reps}${x.rir != null ? ` @${x.rir}` : ""}`).join(" · ")}</div></div>`).join("")}
     ${l.notes ? `<div class="note">${esc(l.notes)}</div>` : ""}
     <p class="hint">@ = reps in reserve.</p>
-    <button class="btn danger" data-act="log-del" data-id="${l.id}">Delete this workout</button>`);
+    <button class="btn danger" data-ta="log-del" data-id="${l.id}">Delete this workout</button>`);
 }
 
 on({
@@ -152,7 +152,7 @@ on({
     p.logs = p.logs.filter((l) => l.id !== el.dataset.id);
     unsyncFromBite(p, el.dataset.id);
     for (const s of p.sessions) if (s.logId === el.dataset.id) { s.status = "planned"; delete s.logId; }
-    save(); document.querySelector('[data-act="close"]')?.click(); render();
+    save(); document.querySelector('[data-ta="close"]')?.click(); render();
   },
 });
 

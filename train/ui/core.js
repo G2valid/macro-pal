@@ -5,6 +5,7 @@ import { ymd } from "../domain/schedule.js";
 
 export const ctx = {
   state: null,
+  host: null, // Bite Club, when the trainer runs inside its Fitness tab
   tab: "today",
   planMode: "week",
   planWeekOffset: 0,
@@ -42,6 +43,7 @@ export function toast(msg, ms = 2200) {
 let sheetOnClose = null;
 export function openSheet(html, onClose) {
   $("#sheetBody").innerHTML = html;
+  $("#sheetBody").classList.add("tc"); // trainer styles apply inside this sheet
   $("#sheet").hidden = false;
   $("#backdrop").hidden = false;
   $("#sheetBody").scrollTop = 0;
@@ -57,10 +59,11 @@ export function closeSheet() {
 }
 export const sheetOpen = () => !$("#sheet").hidden;
 export const sheetTitle = (t, closable = true) =>
-  `<div class="sheet-title"><h2>${t}</h2>${closable ? `<button class="close-x" data-act="close" aria-label="Close">✕</button>` : ""}</div>`;
+  `<div class="sheet-title"><h2>${t}</h2>${closable ? `<button class="close-x" data-ta="close" aria-label="Close">✕</button>` : ""}</div>`;
 
 /** Match Bite Club's look: linked people use their Bite Club theme. */
 export function applyTheme() {
+  if (ctx.host) return; // Bite Club owns the theme
   const p = me();
   const linked = p?.biteId ? biteProfile(p.biteId) : null;
   const accent = linked?.accent || p?.accent || "grape";
@@ -90,7 +93,7 @@ export const EVIDENCE = {
 };
 export const evBadge = (k) => (EVIDENCE[k] ? `<span class="ev ${EVIDENCE[k].cls}">${EVIDENCE[k].label}</span>` : "");
 
-/** Registered actions: data-act="name" → handler(el, event). */
+/** Registered actions: data-ta="name" → handler(el, event). */
 export const actions = {};
 export const on = (map) => Object.assign(actions, map);
 

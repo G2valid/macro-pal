@@ -102,7 +102,7 @@ export const GOALS = {
   strength: { label: "Get stronger", emo: "🏋️" },
   fat_loss: { label: "Lose fat", emo: "🔥" },
   recomp: { label: "Keep muscle while losing weight", emo: "⚖️" },
-  definition: { label: "Look more defined", emo: "✨" },
+  definition: { label: "Toned / more defined", emo: "✨" },
   endurance: { label: "Cardio endurance", emo: "🫀" },
   muscular_endurance: { label: "Muscular endurance", emo: "🔁" },
   general: { label: "General fitness & health", emo: "🌿" },

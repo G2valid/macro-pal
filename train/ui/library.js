@@ -29,14 +29,14 @@ export function renderLibrary(el) {
   el.innerHTML = `
     <input class="input search" type="search" placeholder="Search ${EXERCISES.length} exercises" value="${esc(ctx.libQuery)}" data-lib="q" autocomplete="off">
     <div class="card">
-      <div class="card-head"><h2>Explore by muscle</h2>${ctx.libMuscle ? `<button class="pill-btn" data-act="lib-muscle" data-v="">Clear</button>` : ""}</div>
-      ${Object.entries(GROUPS).map(([g, ms]) => `<div class="mgroup"><span class="section-label">${g}</span><div class="chips">${ms.map((m) => `<button class="chip ${ctx.libMuscle === m ? "on" : ""}" data-act="lib-muscle" data-v="${m}">${MUSCLES[m]}</button>`).join("")}</div></div>`).join("")}
+      <div class="card-head"><h2>Explore by muscle</h2>${ctx.libMuscle ? `<button class="pill-btn" data-ta="lib-muscle" data-v="">Clear</button>` : ""}</div>
+      ${Object.entries(GROUPS).map(([g, ms]) => `<div class="mgroup"><span class="section-label">${g}</span><div class="chips">${ms.map((m) => `<button class="chip ${ctx.libMuscle === m ? "on" : ""}" data-ta="lib-muscle" data-v="${m}">${MUSCLES[m]}</button>`).join("")}</div></div>`).join("")}
     </div>
     <div class="filter-row">
       <select data-lib="pattern" class="input"><option value="">All movements</option>${Object.entries(PATTERNS).map(([k, v]) => `<option value="${k}" ${ctx.libPattern === k ? "selected" : ""}>${v.label}</option>`).join("")}</select>
       ${equip ? `<label class="toggle-inline"><input type="checkbox" data-lib="mine" ${ctx.libMine ? "checked" : ""}> My equipment</label>` : ""}
     </div>
-    <div class="food-list">${list.map((e) => `<button class="food-item" data-act="ex-info" data-id="${e.id}">
+    <div class="food-list">${list.map((e) => `<button class="food-item" data-ta="ex-info" data-id="${e.id}">
       <div class="grow"><b>${esc(e.name)}</b><div class="small muted">${e.primary.map((m) => MUSCLES[m]).join(", ")} · ${e.equip.length ? e.equip.map((x) => EQUIPMENT[x].split(" (")[0]).join(", ") : "No equipment"}</div></div>
       <span class="lvl lvl${e.level}">${LEVELS[e.level]}</span></button>`).join("") || `<div class="empty">No exercises match.</div>`}</div>`;
 }
@@ -48,7 +48,7 @@ export function exerciseSheet(id) {
   const pr = p ? personalRecords(p)[id] : null;
   const alts = alternativesFor(id, p?.profile?.equipment).slice(0, 6);
   const disliked = p?.profile?.disliked?.includes(id);
-  const link = (x) => `<button class="link" data-act="ex-info" data-id="${x}">${esc(EX[x].name)}</button>`;
+  const link = (x) => `<button class="link" data-ta="ex-info" data-id="${x}">${esc(EX[x].name)}</button>`;
   openSheet(`${sheetTitle(esc(e.name))}
     <div class="chips" style="margin-bottom:12px"><span class="lvl lvl${e.level}">${LEVELS[e.level]}</span><span class="badge">${PATTERNS[e.pattern].label}</span>${e.uni ? `<span class="badge">One side at a time</span>` : ""}</div>
     <div class="card">
@@ -67,7 +67,7 @@ export function exerciseSheet(id) {
     ${e.easier.length || e.harder.length ? `<div class="card">${e.easier.length ? `<p><b>Easier:</b> ${e.easier.map(link).join(", ")}</p>` : ""}${e.harder.length ? `<p><b>Harder:</b> ${e.harder.map(link).join(", ")}</p>` : ""}</div>` : ""}
     ${alts.length ? `<div class="card"><h3>Alternatives${p ? " with your equipment" : ""}</h3><p>${alts.map((a) => link(a.id)).join(", ")}</p></div>` : ""}
     <p class="hint">Video demos aren't included yet — they need properly licensed footage. Follow the steps and start light.</p>
-    ${p ? `<button class="btn secondary" data-act="ex-dislike" data-id="${id}">${disliked ? "Allow in future plans" : "Don't use in future plans"}</button>` : ""}`);
+    ${p ? `<button class="btn secondary" data-ta="ex-dislike" data-id="${id}">${disliked ? "Allow in future plans" : "Don't use in future plans"}</button>` : ""}`);
 }
 
 on({

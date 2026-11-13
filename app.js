@@ -3,6 +3,7 @@ import { buildPlanPrompt, parsePlanReply, normalizePlan, groceryList, groceryTex
 import { buildExampleDay, mealBudgets, MEAL_PATTERNS } from "./mealplan.js?v=3";
 import { COACHES, DEFAULT_COACH, seasonalCoach, coachLine, guestChance, phaseLine, inSeason } from "./coaches.js?v=16";
 import { TRIGGER_META, LINE_ID, FALLBACK, T } from "./triggers.js?v=6";
+import { initTraining, trainingSection, inTrainingView, renderTrainingView, leaveTraining, plannedThisWeek, openTrainerWorkout, workoutDeleted, trainingBackup, restoreTraining } from "./train/embed.js?v=1";
 
 /* =========================================================
    Storage
@@ -212,6 +213,7 @@ function applyTheme() {
 let sheetOnClose = null;
 function openSheet(html, onClose) {
   $("#sheetBody").innerHTML = html;
+  $("#sheetBody").classList.remove("tc"); // trainer sheets add their own styles
   $("#sheet").hidden = false;
   $("#backdrop").hidden = false;
   $("#sheetBody").scrollTop = 0;
@@ -245,7 +247,8 @@ function render() {
   $("#dateLabel").textContent =
     currentDay === t ? "Today" : currentDay === addDays(t, -1) ? "Yesterday" : currentDay === addDays(t, 1) ? "Tomorrow" :
     parseYmd(currentDay).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-  $("#dateNav").style.visibility = tab === "today" || tab === "fitness" ? "visible" : "hidden";
+  $("#dateNav").style.visibility = tab === "today" || (tab === "fitness" && !inTrainingView()) ? "visible" : "hidden";
+  if (tab !== "fitness") leaveTraining();
   document.querySelectorAll(".tab[data-tab]").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
   for (const v of ["today", "fitness", "progress", "settings"]) $(`#view-${v}`).hidden = v !== tab;
   if (tab === "today") renderToday();
@@ -778,6 +781,7 @@ function bindProfileForm(existing) {
       state.activeId = id;
       save(); closeSheet(); tab = "today"; currentDay = today(); render();
       showTargetsIntro();
+      startTraining();
     }
   });
 }
@@ -1929,7 +1933,7 @@ function openNewProfile(existing) {
 }
 
 function exportData() {
-  const blob = new Blob([JSON.stringify({ ...state, apiKey: "" }, null, 2)], { type: "application/json" });
+  const blob = new Blob([JSON.stringify({ ...state, apiKey: "", training: trainingBackup() }, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = `biteclub-backup-${today()}.json`;
@@ -1944,6 +1948,8 @@ $("#importInput").addEventListener("change", async (e) => {
     const data = JSON.parse(await file.text());
     if (!data.profiles) throw new Error();
     if (!confirm("Replace all data on this device with this backup?")) return;
+    if (data.training) restoreTraining(data.training);
+    delete data.training;
     state = { ...data, apiKey: state.apiKey, model: data.model || state.model };
     if (!state.profiles[state.activeId]) state.activeId = Object.keys(state.profiles)[0];
     save(); render(); toast("Backup restored");
@@ -2549,7 +2555,8 @@ function weekTotals(date = currentDay, p = P()) {
   }
   return { start, workouts, minutes };
 }
-const weeklyGoal = (p = P()) => ({ workouts: p.weeklyGoal?.workouts ?? 4, minutes: p.weeklyGoal?.minutes ?? 150 });
+// With a training plan, the weekly workouts goal is the number of sessions planned this week.
+const weeklyGoal = (p = P()) => ({ workouts: (p === P() && plannedThisWeek()) || (p.weeklyGoal?.workouts ?? 4), minutes: p.weeklyGoal?.minutes ?? 150 });
 
 /** Best values across all history, keyed so we can spot new records. */
 function recordMap(p = P()) {
@@ -2623,6 +2630,8 @@ function miniRing(val, goal, label, sub) {
 }
 
 function renderFitness() {
+  // Plan, exercises, strength stats and the live workout open full-screen inside Fitness.
+  if (inTrainingView()) { renderTrainingView($("#view-fitness")); return; }
   const p = P();
   const day = dayData();
   const act = day.activity || {};
@@ -2646,7 +2655,7 @@ function renderFitness() {
 
   const stat = (v, l) => `<div><b class="num">${v || "—"}</b><span>${l}</span></div>`;
   $("#view-fitness").innerHTML = `
-    <a class="banner" href="train/" style="text-decoration:none;color:inherit"><span class="big-emo">🏋️</span><div><b>Training Coach</b><span>Your lifting plan, workout logger and progress</span></div></a>
+    ${trainingSection(currentDay)}
     <div class="btn-row">
       <button class="btn" data-act="open-import">📸 Import screenshot</button>
       <button class="btn secondary" data-act="open-workout">+ Log workout</button>
@@ -2723,6 +2732,7 @@ function openFitnessAdd() {
 
 let wDraft = null;
 function openWorkout(id) {
+  if (openTrainerWorkout(id)) return; // a plan workout: show its sets
   const day = ensureDay();
   day.workouts ||= [];
   const w = id ? day.workouts.find((x) => x.id === id) : null;
@@ -3493,6 +3503,7 @@ document.addEventListener("click", (ev) => {
     case "del-workout": {
       const day = ensureDay();
       day.workouts = (day.workouts || []).filter((x) => x.id !== t.dataset.id);
+      workoutDeleted(t.dataset.id);
       save(); closeSheet(); render(); toast("Deleted");
       break;
     }
@@ -3805,6 +3816,25 @@ function boot() {
   }
   render();
   coachOnOpen();
+  startTraining();
+}
+
+// The personal trainer lives in the Fitness tab. It loads its plan from
+// IndexedDB, then copies any finished workouts the Fitness log is missing.
+let trainingStarted = false;
+function startTraining() {
+  if (trainingStarted) return;
+  trainingStarted = true;
+  initTraining({
+    getState: () => state,
+    save,
+    activeId: () => state.activeId,
+    rerender: () => render(),
+    openImport: () => openImport(),
+  }).then((n) => {
+    if (tab === "fitness") render();
+    if (n) toast(`Added ${n} workout${n > 1 ? "s" : ""} from your plan to the Fitness log`);
+  }).catch((err) => console.error("Training plan failed to load", err));
 }
 boot();
 

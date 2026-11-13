@@ -69,7 +69,13 @@ export async function requestPersistence() {
 }
 
 /* ---------------- Bite Club (read-only) ---------------- */
+// Inside Bite Club the trainer works on Bite Club's live in-memory data (so
+// neither side can overwrite the other); on its own it reads localStorage.
+let host = null;
+export const setBiteHost = (h) => { host = h; };
+
 function bite() {
+  if (host) return host.getState();
   try { return JSON.parse(localStorage.getItem(BITE_KEY)) || null; } catch { return null; }
 }
 
@@ -92,12 +98,12 @@ export const biteProfile = (id) => biteProfiles().find((p) => p.id === id) || nu
 
 const CARDIO_TYPES = new Set(["cycling", "running", "walking", "rowing", "swimming", "hiit", "other"]);
 
-/** Cardio-type workouts logged in Bite Club on a date (e.g. Peloton imports).
- *  Entries the Training Coach wrote itself are skipped — they're already
- *  counted from the trainer's own logs. */
+/** Cardio-type workouts in Bite Club's log on a date — the one workout log,
+ *  including cardio logged from the plan and screenshot imports. */
 export function biteCardio(id, date) {
   const p = bite()?.profiles?.[id];
-  return (p?.days?.[date]?.workouts || []).filter((w) => CARDIO_TYPES.has(w.type) && w.source !== "trainer").map((w) => ({
+  return (p?.days?.[date]?.workouts || []).filter((w) => CARDIO_TYPES.has(w.type)).map((w) => ({
+    id: w.id, source: w.source || "",
     type: w.type, title: w.title || "", minutes: w.minutes || 0, distance: w.distance || 0, distUnit: w.distUnit || "mi", avgHr: w.avgHr || 0, kcal: w.kcal || 0,
   }));
 }
@@ -106,6 +112,11 @@ export function biteCardio(id, date) {
 export function biteWeights(id) {
   const p = bite()?.profiles?.[id];
   return [...(p?.weights || [])].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** Every workout in Bite Club's log on a date. */
+export function biteWorkouts(id, date) {
+  return [...(bite()?.profiles?.[id]?.days?.[date]?.workouts || [])];
 }
 
 /** Steps logged in Bite Club for a date. */
@@ -121,6 +132,12 @@ export const biteModel = () => bite()?.model || "";
  * Read-modify-write straight from localStorage so we never overwrite newer
  * Bite Club data. Bite Club reloads its state when you return to it. */
 function biteWrite(fn) {
+  if (host) {
+    const s = host.getState();
+    if (!s?.profiles) return false;
+    if (fn(s) !== false) host.save();
+    return true;
+  }
   try {
     const s = JSON.parse(localStorage.getItem(BITE_KEY));
     if (!s?.profiles) return false;

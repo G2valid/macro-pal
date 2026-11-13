@@ -59,6 +59,7 @@ test("cardio minutes combine own logs and Bite Club without double counting", ()
   p.cardioLogs = [
     { date: "2026-11-16", minutes: 30, source: "manual" },
     { date: "2026-11-17", minutes: 20, source: "bite" },
+    { date: "2026-11-18", minutes: 25, source: "manual", biteSynced: true }, // already in Bite Club's log
   ];
   const bite = (d) => (d === "2026-11-17" ? [{ minutes: 20 }] : []);
   assert.deepEqual(cardioMinutes(p, "2026-11-16", "2026-11-22", bite), { own: 30, bite: 20, total: 50 });

@@ -27,7 +27,7 @@ const HOME_DEFAULT = ["dumbbells", "bench", "bands"];
 export let ob = null;
 
 /** Start onboarding, optionally editing an existing person's answers. */
-export function startOnboarding(editId = null) {
+export function startOnboarding(editId = null, { biteId = null } = {}) {
   const p = editId ? ctx.state.people[editId] : null;
   const pr = p?.profile;
   ob = {
@@ -42,7 +42,9 @@ export function startOnboarding(editId = null) {
     weeks: p?.program?.weeks || 6, startDate: nextStart(),
     program: null,
   };
-  if (editId) ob.step = 1; // skip "who"
+  if (!editId && biteId) { ob.biteId = biteId; ob.name = biteProfile(biteId)?.name || ""; }
+  ob.first = editId || biteId ? 1 : 0; // skip "who" when we already know
+  ob.step = ob.first;
   ctx.tab = "onboard";
   render();
 }
@@ -66,8 +68,8 @@ function stepValid(k) {
 }
 
 const optBtn = (act, v, on, title, hint = "", extra = "") =>
-  `<button type="button" class="opt ${on ? "on" : ""}" data-act="${act}" data-v="${v}" ${extra}><b>${title}</b>${hint ? `<span>${hint}</span>` : ""}</button>`;
-const chip = (act, v, on, label) => `<button type="button" class="chip ${on ? "on" : ""}" data-act="${act}" data-v="${v}">${label}</button>`;
+  `<button type="button" class="opt ${on ? "on" : ""}" data-ta="${act}" data-v="${v}" ${extra}><b>${title}</b>${hint ? `<span>${hint}</span>` : ""}</button>`;
+const chip = (act, v, on, label) => `<button type="button" class="chip ${on ? "on" : ""}" data-ta="${act}" data-v="${v}">${label}</button>`;
 
 function whoStep() {
   const used = new Set(Object.values(ctx.state.people).map((p) => p.biteId).filter(Boolean));
@@ -106,8 +108,8 @@ function goalsStep() {
     <div class="opts">${Object.entries(GOALS).map(([k, g]) => optBtn("ob-primary", k, ob.primary === k, `${g.emo} ${g.label}`)).join("")}</div>
     ${ob.primary ? `<h3 style="margin-top:16px">Anything else? <span class="muted small">(up to 2)</span></h3>
     <div class="chips" style="margin-top:8px">${Object.entries(GOALS).filter(([k]) => k !== ob.primary).map(([k, g]) => chip("ob-secondary", k, ob.secondary.includes(k), `${g.emo} ${g.label}`)).join("")}</div>` : ""}
-    ${ob.primary === "definition" ? `<div class="note" style="margin-top:12px">"Definition" comes from having muscle and lower body fat. So this plan builds muscle with normal, challenging weights while Bite Club handles the calorie side. There's no special "toning" rep range — that's a myth.</div>` : ""}
-    ${ob.primary === "fat_loss" || ob.primary === "recomp" ? `<div class="note" style="margin-top:12px">Fat loss comes mainly from your calorie deficit (that's Bite Club's job). Lifting with real effort is what keeps muscle while you lose — so this plan trains for muscle, plus cardio for health and extra burn. Spot-reducing fat from one area isn't possible.</div>` : ""}`;
+    ${ob.primary === "definition" ? `<div class="note" style="margin-top:12px">Looking "toned" or defined comes from having muscle and lower body fat. So this plan builds muscle with normal, challenging weights while Bite Club handles the calorie side. There's no special "toning" rep range — that's a myth.</div>` : ""}
+    ${ob.primary === "fat_loss" || ob.primary === "recomp" ? `<div class="note" style="margin-top:12px">Fat loss comes mainly from your calorie deficit (that's what your food targets are for). Lifting with real effort is what keeps muscle while you lose — so this plan trains for muscle, plus cardio for health and extra burn. Spot-reducing fat from one area isn't possible.</div>` : ""}`;
 }
 
 function priorityStep() {
@@ -120,15 +122,15 @@ function priorityStep() {
 function scheduleStep() {
   return `<h2>When can you train?</h2>
     <p class="muted">Tap every day you could work out. The plan decides which are lifting, cardio or rest.</p>
-    <div class="day-pick">${DAYS.map((d, i) => `<button type="button" class="${ob.days.includes(i) ? "on" : ""}" data-act="ob-day" data-v="${i}">${d}</button>`).join("")}</div>
+    <div class="day-pick">${DAYS.map((d, i) => `<button type="button" class="${ob.days.includes(i) ? "on" : ""}" data-ta="ob-day" data-v="${i}">${d}</button>`).join("")}</div>
     <h3 style="margin-top:18px">How long per workout?</h3>
-    <div class="seg" style="margin-top:8px">${[30, 45, 60, 75, 90].map((m) => `<button type="button" class="${ob.minutes === m ? "on" : ""}" data-act="ob-min" data-v="${m}">${m} min</button>`).join("")}</div>
+    <div class="seg" style="margin-top:8px">${[30, 45, 60, 75, 90].map((m) => `<button type="button" class="${ob.minutes === m ? "on" : ""}" data-ta="ob-min" data-v="${m}">${m} min</button>`).join("")}</div>
     <p class="hint">Including warm-up. Sessions are trimmed to fit, cutting the least important work first.</p>`;
 }
 
 function equipmentStep() {
   return `<h2>Where do you train?</h2>
-    <div class="seg">${[["gym", "Gym"], ["home", "Home"], ["both", "Both"]].map(([v, l]) => `<button type="button" class="${ob.location === v ? "on" : ""}" data-act="ob-loc" data-v="${v}">${l}</button>`).join("")}</div>
+    <div class="seg">${[["gym", "Gym"], ["home", "Home"], ["both", "Both"]].map(([v, l]) => `<button type="button" class="${ob.location === v ? "on" : ""}" data-ta="ob-loc" data-v="${v}">${l}</button>`).join("")}</div>
     <p class="muted">${ob.location === "gym" ? "Untick anything your gym doesn't have." : ob.location === "home" ? "Tick what you have. Bodyweight exercises are always included." : "Tick what you can use on a typical training day."}</p>
     <div class="list">${Object.entries(EQUIPMENT).map(([k, l]) => `<label class="toggle-row"><span>${l}</span><input type="checkbox" data-ob-eq="${k}" ${ob.equipment.includes(k) ? "checked" : ""}></label>`).join("")}</div>
     ${ob.equipment.includes("dumbbells") && ob.location !== "gym" ? `<label class="field" style="margin-top:12px"><span>Which dumbbells do you have? (lb)</span>
@@ -141,7 +143,7 @@ function limitsStep() {
     <p class="muted">Tap any area that's sensitive or injured. This steers exercise choice — it isn't a diagnosis, and anything persistent is worth getting checked.</p>
     <div class="chips">${Object.entries(JOINTS).map(([k, l]) => chip("ob-joint", k, !!ob.limits[k], l)).join("")}</div>
     ${Object.keys(ob.limits).length ? `<div class="card" style="margin-top:12px">${Object.keys(ob.limits).map((j) => `<div class="limit-row"><b>${JOINTS[j]}</b>
-      <div class="seg" style="margin:6px 0 0">${[["careful", "Go easy"], ["avoid", "Avoid loading"]].map(([v, l]) => `<button type="button" class="${ob.limits[j] === v ? "on" : ""}" data-act="ob-limit" data-j="${j}" data-v="${v}">${l}</button>`).join("")}</div></div>`).join("")}
+      <div class="seg" style="margin:6px 0 0">${[["careful", "Go easy"], ["avoid", "Avoid loading"]].map(([v, l]) => `<button type="button" class="${ob.limits[j] === v ? "on" : ""}" data-ta="ob-limit" data-j="${j}" data-v="${v}">${l}</button>`).join("")}</div></div>`).join("")}
       <p class="hint" style="margin-top:10px"><b>Go easy</b> prefers exercises that load it less. <b>Avoid</b> leaves out exercises that load it meaningfully.</p></div>` : ""}
     <div class="note" style="margin-top:12px">During workouts: muscle burn and next-day soreness are normal. Sharp, pinching or joint pain isn't — stop that exercise and use the 🩹 button so the app won't push the weight up.</div>`;
 }
@@ -154,7 +156,7 @@ function cardioStep() {
     <h3 style="margin-top:16px">What do you enjoy?</h3>
     <div class="chips" style="margin-top:8px">${Object.entries(CARDIO_MODES).map(([k, l]) => chip("ob-cmode", k, ob.cardioModes.includes(k), l)).join("")}</div>
     ${joints ? `<p class="hint" style="margin-top:8px">With your ${ob.limits.knee ? "knees" : "hips"} in mind, cycling, walking, elliptical and rowing are easier on the joints than running.</p>` : ""}
-    <div class="note" style="margin-top:12px">${CARDIO_TARGET_NOTE.text} ${evBadge("strong")}<br><br>Cardio you log in Bite Club (like Peloton imports) counts here automatically.</div>`;
+    <div class="note" style="margin-top:12px">${CARDIO_TARGET_NOTE.text} ${evBadge("strong")}<br><br>Everything in your Fitness log counts — including Peloton and other screenshot imports.</div>`;
 }
 
 function profileFromOb() {
@@ -195,7 +197,7 @@ function reviewStep() {
     </div>
     <div class="card">
       <label class="field"><span>Block length</span>
-      <div class="seg" style="margin:0">${[4, 6, 8, 12].map((w) => `<button type="button" class="${ob.weeks === w ? "on" : ""}" data-act="ob-weeks" data-v="${w}">${w} weeks</button>`).join("")}</div></label>
+      <div class="seg" style="margin:0">${[4, 6, 8, 12].map((w) => `<button type="button" class="${ob.weeks === w ? "on" : ""}" data-ta="ob-weeks" data-v="${w}">${w} weeks</button>`).join("")}</div></label>
       <p class="hint">At the end of a block you'll review progress and the plan is refreshed. Every exercise can be swapped or edited in the Plan tab.</p>
       <label class="field"><span>Start date</span><input type="date" data-ob="startDate" value="${ob.startDate}"></label>
     </div>`;
@@ -205,13 +207,13 @@ const RENDER = { who: whoStep, safety: safetyStep, experience: experienceStep, g
 
 export function renderOnboarding(el) {
   const k = STEPS[ob.step];
-  const first = ob.editing ? 1 : 0;
+  const first = ob.first;
   el.innerHTML = `<div class="ob">
-    <div class="ob-top">${ob.step > first ? `<button class="icon-btn" data-act="ob-back" aria-label="Back">‹</button>` : `<span></span>`}
+    <div class="ob-top">${ob.step > first ? `<button class="icon-btn" data-ta="ob-back" aria-label="Back">‹</button>` : `<span></span>`}
       <div class="dots">${STEPS.slice(first).map((_, i) => `<i class="${i + first <= ob.step ? "on" : ""}"></i>`).join("")}</div>
-      ${Object.keys(ctx.state.people).length ? `<button class="icon-btn" data-act="ob-cancel" aria-label="Cancel">✕</button>` : "<span></span>"}</div>
+      ${ctx.host || Object.keys(ctx.state.people).length ? `<button class="icon-btn" data-ta="ob-cancel" aria-label="Cancel">✕</button>` : "<span></span>"}</div>
     <div class="ob-body">${RENDER[k]()}</div>
-    <div class="ob-foot"><button class="btn" data-act="${k === "review" ? "ob-finish" : "ob-next"}" ${stepValid(k) ? "" : "disabled"}>${k === "review" ? (ob.editing ? "Save new plan" : "Start my plan") : "Continue"}</button>
+    <div class="ob-foot"><button class="btn" data-ta="${k === "review" ? "ob-finish" : "ob-next"}" ${stepValid(k) ? "" : "disabled"}>${k === "review" ? (ob.editing ? "Save new plan" : "Start my plan") : "Continue"}</button>
     ${k === "review" && ob.editing ? `<p class="hint" style="text-align:center;margin-top:8px">Your workout history is kept. Upcoming sessions are replaced.</p>` : ""}</div>
   </div>`;
 }
@@ -261,6 +263,25 @@ export function onboardInput(e) {
   return false;
 }
 
+/**
+ * Replace a person's plan from `start` on. Workout history, records and
+ * sessions already completed are kept; upcoming sessions are rebuilt.
+ */
+export function rebuildPlan(p, profile, program, start = today(), dumbbells = undefined) {
+  program.startDate = start;
+  const doneKept = (p.sessions || []).filter((s) => s.status === "done" && s.date <= start);
+  const block = p.blocks?.length || 0;
+  const fresh = buildCalendar(program, start)
+    .filter((s) => !doneKept.some((d) => d.date === s.date && d.kind === s.kind))
+    .map((s) => ({ ...s, name: s.kind === "lift" ? program.templates.find((t) => t.id === s.templateId)?.name : "Cardio" }));
+  // Older blocks' sessions get unique ids so they don't collide with new ones.
+  p.sessions = [...doneKept.map((s) => ({ ...s, id: s.id.startsWith("old-") ? s.id : `old-${block}-${s.id}` })), ...fresh];
+  (p.blocks ||= []).push({ startDate: p.program?.startDate, split: p.program?.split, weeks: p.program?.weeks, endedOn: today() });
+  p.profile = profile;
+  p.program = program;
+  if (dumbbells !== undefined) p.loads = { ...p.loads, dumbbells };
+}
+
 function finish() {
   const profile = profileFromOb();
   const program = ob.program || generateProgram(profile, { weeks: ob.weeks });
@@ -271,14 +292,7 @@ function finish() {
   const loads = { ...DEFAULT_LOADS, dumbbells: dumbbells.length ? [...new Set(dumbbells)].sort((a, b) => a - b) : null };
 
   if (ob.editing) {
-    const p = ctx.state.people[ob.editing];
-    const kept = (p.sessions || []).filter((s) => s.status === "done" && s.date < start);
-    // Older blocks' sessions need unique ids so they don't collide.
-    p.sessions = [...kept.map((s) => ({ ...s, id: s.id.startsWith("old-") ? s.id : `old-${p.blocks?.length || 0}-${s.id}` })), ...named(buildCalendar(program, start))];
-    (p.blocks ||= []).push({ startDate: p.program?.startDate, split: p.program?.split, weeks: p.program?.weeks, endedOn: today() });
-    p.profile = profile;
-    p.program = program;
-    p.loads = { ...p.loads, dumbbells: loads.dumbbells };
+    rebuildPlan(ctx.state.people[ob.editing], profile, program, start, loads.dumbbells);
     toast("New plan saved 💪");
   } else {
     const bite = ob.biteId ? biteProfile(ob.biteId) : null;
