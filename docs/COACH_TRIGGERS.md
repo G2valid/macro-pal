@@ -43,6 +43,7 @@ Coach IDs: bestie, dj, drill, surfer, cat, popstar, dad, turkey, santa, bunny, s
 | `checkin_protein` | Check-in time passed (default 5 pm) and under half the protein goal. Uses `protein_low_late` lines | checkin |
 | `checkin_move` | Check-in time passed (default 7 pm), no workout and under half the step goal. Uses `steps_low_late` lines | checkin |
 | `checkin_weigh` | Weigh-in day, check-in time passed (default 11 am), not weighed in. Own lines: `checkin_weigh` | checkin |
+| `checkin_vitamins` | A vitamin's own time passed (Settings → Vitamins & supplements) and it isn't ticked off. Own lines: `checkin_vitamins`, with `{vitamin}` (e.g. "Vitamin D and Fish oil"), `{VITAMIN}` and `{time}`; falls back to `tip` | checkin |
 | `calories_close` | Calories cross 85% of goal | small |
 | `calories_hit` | Calories land at 95–100% of goal | big |
 | `calories_over_small` | Calories go over goal, up to +10% | nudge |

@@ -698,6 +698,10 @@ export const RICKY = {
     "Yo! {time} and no {meal}? Back in '94 I never missed catering. LOG IT, baby!",
     "Ricky here. {Meal} still not logged. That's like skipping the chorus. Can't do it. 🛼",
   ] },
+  checkin_vitamins: { any: [
+    "Ricky here. {time} and no {vitamin}? Back on tour I never missed my vitamins. Or my hair gel. Take it, baby! 🛼",
+    "{vitamin} still waiting? That's like leaving the stage before the encore. Take it!",
+  ] },
   checkin_weigh: { any: [
     "Weigh-in day! Step on that scale like it's the big stage. Big energy.",
     "Scale check! I weighed in before every tour. Probably. Log it, superstar!",

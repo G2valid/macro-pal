@@ -350,6 +350,10 @@ export const CRUNCHULA = {
     "Mortal. It is {time}. Thy {meal} remains unrecorded. I cannot coach shadows.",
     "No {meal}? Muscle does not materialize from darkness. Feed thyself. Log it.",
   ] },
+  checkin_vitamins: { any: [
+    "Mortal. It is {time}. Thy {vitamin}: untaken. Even I require nourishment. Consume it.",
+    "{vitamin}, forgotten in the crypt of thy cupboard? Swallow it and tick it off.",
+  ] },
   checkin_weigh: { any: [
     "Weigh-in day, mortal. Approach the scale. It provides information. Not judgment.",
     "The scale awaits. I would join thee, but I would not appear on it. Long story.",

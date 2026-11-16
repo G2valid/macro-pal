@@ -1,8 +1,8 @@
 import { estimateFood, readFitnessScreens, suggestMeals, reviewEating, suggestExampleDay, readLabel, generatePlan, prepareImage, swapIngredient, splitMeal, MODELS, DEFAULT_MODEL, LABEL_MODEL } from "./ai.js?v=13";
 import { buildPlanPrompt, parsePlanReply, normalizePlan, groceryList, groceryText, fmtQty } from "./planner.js?v=3";
 import { buildExampleDay, mealBudgets, MEAL_PATTERNS } from "./mealplan.js?v=3";
-import { COACHES, DEFAULT_COACH, seasonalCoach, coachLine, guestChance, phaseLine, inSeason } from "./coaches.js?v=16";
-import { TRIGGER_META, LINE_ID, FALLBACK, T } from "./triggers.js?v=6";
+import { COACHES, DEFAULT_COACH, seasonalCoach, coachLine, guestChance, phaseLine, inSeason } from "./coaches.js?v=17";
+import { TRIGGER_META, LINE_ID, FALLBACK, T } from "./triggers.js?v=7";
 import { initTraining, trainingSection, inTrainingView, renderTrainingView, leaveTraining, plannedThisWeek, openTrainerWorkout, workoutDeleted, trainingBackup, restoreTraining } from "./train/embed.js?v=1";
 
 /* =========================================================
@@ -378,6 +378,7 @@ function renderToday() {
         <button class="pill-btn" data-act="water" data-n="-1" aria-label="Remove a cup">−</button>
         <button class="pill-btn" data-act="water" data-n="1" aria-label="Add a cup">+ Cup</button></div>
     </div>
+    ${vitaminCard(day)}
     <button class="btn secondary" data-act="copy-yesterday">Copy yesterday's meals</button>
   `;
 
@@ -633,6 +634,7 @@ function renderSettings() {
       <button data-act="edit-diet"><span>🌾 Dietary needs</span><span class="v">${(p.diet || []).length ? esc(p.diet.join(", ")) : "None"} ›</span></button>
       <button data-act="toggle-cycle"><span>🌸 Cycle tracking</span><span class="v">${p.cycle?.enabled ? "On 🔒" : "Off"} ›</span></button>
       <button data-act="edit-water"><span>💧 Water goal</span><span class="v">${p.waterGoal || 8} cups ›</span></button>
+      <button data-act="vitamins-open"><span>💊 Vitamins & supplements</span><span class="v">${(p.vitamins || []).length ? `${p.vitamins.length} added` : "None"} ›</span></button>
       <button data-act="edit-fitness-goals"><span>👟 Steps & exercise</span><span class="v">${(p.stepGoal || 8000).toLocaleString()} steps ›</span></button>
     </div>
 
@@ -3189,6 +3191,7 @@ function coachSay(id, { force = false } = {}) {
   const chain = [LINE_ID[id] || id];
   while (FALLBACK[chain[chain.length - 1]] && chain.length < 4) chain.push(FALLBACK[chain[chain.length - 1]]);
   const text = (!force && phaseLine(who, chain[0], new Date(), { status: cfg.valentine })) || coachLine(who, chain, { goal: computeTargets().direction, vars: { ...coachVars(), ...checkinVars(id) } });
+  const shown = id === "checkin_vitamins" && text ? text[0].toUpperCase() + text.slice(1) : text; // "{vitamin}" can start a line
   if (!text) return false;
   const type = TRIGGER_META[id]?.type;
   if (!force) {
@@ -3197,7 +3200,7 @@ function coachSay(id, { force = false } = {}) {
     if (type === "nudge") log.nudges++;
   }
   save();
-  showCoach(who, text, guest === who && cfg.id !== who, id, id.startsWith("checkin_") ? checkinFact : "");
+  showCoach(who, shown, guest === who && cfg.id !== who, id, id.startsWith("checkin_") ? checkinFact : "");
   if (type === "huge" || id === "protein_hit" || id === "workout_pr") confetti();
   return true;
 }
@@ -3284,6 +3287,7 @@ const CHECKS = {
   water: { emo: "💧", label: "Water", def: "14:00", desc: "Half my water", todo: "you're under half your water", done: (d, p) => (d.water || 0) >= (p.waterGoal || 8) / 2 },
   protein: { emo: "🥩", label: "Protein", def: "17:00", desc: "Half my protein", todo: "you're under half your protein", done: (d) => totals(d.entries).p >= dayGoal(today()).protein / 2 },
   move: { emo: "👟", label: "Move", def: "19:00", desc: "A workout or half my steps", todo: "no workout or steps yet", done: (d, p) => (d.workouts || []).length > 0 || (d.activity?.steps || 0) >= (p.stepGoal || 8000) / 2 },
+  vitamins: { emo: "💊", label: "Vitamins", def: "09:00", word: "vitamins", desc: "Vitamins & supplements (times set per item)", todo: "vitamins aren't ticked off yet", perItem: true, done: (d, p) => !vitaminsDue(p, d).length },
   weigh: { emo: "⚖️", label: "Weigh-in", def: "11:00", desc: "Weekly weigh-in (weigh-in day only)", todo: "it's weigh-in day and you haven't weighed in", done: (d, p) => new Date().getDay() !== (p.weighDay ?? 1) || (p.weights || []).some((w) => w.date === today()) },
 };
 function checkinCfg() {
@@ -3302,6 +3306,7 @@ function dueCheckins() {
   const d = dayData(today());
   return Object.entries(CHECKS).filter(([k, c]) => {
     if (!cfg[k].on) return false;
+    if (c.perItem) return vitaminsDue(p, d).length > 0; // each vitamin has its own time
     const [h, m] = cfg[k].time.split(":").map(Number);
     return mins >= h * 60 + m && !c.done(d, p);
   }).map(([k]) => k);
@@ -3311,7 +3316,9 @@ function checkinVars(id) {
   const k = id.startsWith("checkin_") ? id.slice(8) : null;
   if (!k || !CHECKS[k]) return {};
   const w = CHECKS[k].word || CHECKS[k].label.toLowerCase();
-  return { meal: w, MEAL: w.toUpperCase(), Meal: w[0].toUpperCase() + w.slice(1), time: fmtClock(checkinCfg()[k].time) };
+  const due = k === "vitamins" ? vitaminsDue() : [];
+  const vit = due.map((v) => v.name).join(" and ") || "your vitamins";
+  return { meal: w, MEAL: w.toUpperCase(), Meal: w[0].toUpperCase() + w.slice(1), time: fmtClock(due[0]?.time || checkinCfg()[k].time), vitamin: vit, VITAMIN: vit.toUpperCase() };
 }
 /** Due check-ins the coach hasn't called out today (also sets the "still to do" line under the pop-up). */
 function newCheckinIds() {
@@ -3323,7 +3330,7 @@ function newCheckinIds() {
   const cfg = checkinCfg();
   checkinFact = due.length > 1
     ? `⏰ Still to do: ${due.map((k) => CHECKS[k].label.toLowerCase()).join(", ")}`
-    : `⏰ ${fmtClock(cfg[due[0]].time)} · ${CHECKS[due[0]].todo}`;
+    : `⏰ ${fmtClock(checkinTime(due[0]))} · ${due[0] === "vitamins" ? `${vitaminsDue().map((v) => v.name).join(", ")} not ticked off yet` : CHECKS[due[0]].todo}`;
   return fresh.map((k) => "checkin_" + k);
 }
 function checkinStrip() {
@@ -3332,7 +3339,7 @@ function checkinStrip() {
   const cfg = checkinCfg();
   return `<div class="checkins">
     <div class="ci-head"><b>⏰ Still to do</b><button class="ci-edit" data-act="checkins-open">Edit</button></div>
-    <div class="ci-chips">${due.map((k) => `<button class="ci-chip" data-act="checkin-go" data-k="${k}"><span>${CHECKS[k].emo}</span><b>${CHECKS[k].label}</b><small>by ${fmtClock(cfg[k].time)}</small></button>`).join("")}</div>
+    <div class="ci-chips">${due.map((k) => `<button class="ci-chip" data-act="checkin-go" data-k="${k}"><span>${CHECKS[k].emo}</span><b>${CHECKS[k].label}</b><small>by ${fmtClock(checkinTime(k))}</small></button>`).join("")}</div>
   </div>`;
 }
 // While the app is open, check every minute so a passing deadline gets called out right away.
@@ -3350,6 +3357,77 @@ function checkinTick() {
 }
 setInterval(checkinTick, 60e3);
 
+/* ---- Vitamins & supplements: a daily tick-off with per-item times ---- */
+const VIT_SUGGEST = ["Multivitamin", "Vitamin D", "Fish oil", "Creatine", "Magnesium", "Iron", "Vitamin B12", "Prenatal", "Probiotic"];
+const hmMins = (hm) => { const [h, m] = (hm || "09:00").split(":").map(Number); return h * 60 + m; };
+const vitaminsSorted = (p = P()) => [...(p?.vitamins || [])].sort((a, b) => hmMins(a.time) - hmMins(b.time));
+/** Vitamins whose time has passed today and that aren't ticked off yet. */
+function vitaminsDue(p = P(), d = dayData(today())) {
+  const now = new Date(), mins = now.getHours() * 60 + now.getMinutes();
+  return vitaminsSorted(p).filter((v) => mins >= hmMins(v.time) && !d.vitamins?.[v.id]);
+}
+const checkinTime = (k) => (CHECKS[k].perItem ? vitaminsDue()[0]?.time || CHECKS[k].def : checkinCfg()[k].time);
+
+function vitaminCard(day) {
+  const list = vitaminsSorted();
+  if (!list.length) return "";
+  const taken = day.vitamins || {};
+  const n = list.filter((v) => taken[v.id]).length;
+  const nowMins = new Date().getHours() * 60 + new Date().getMinutes();
+  return `<div class="card">
+    <div class="card-head"><h2>💊 Vitamins</h2><span class="meta num">${n === list.length ? "All taken ✓" : `${n} / ${list.length}`} <button class="pill-btn" data-act="vitamins-open" style="margin-left:6px">Edit</button></span></div>
+    <div class="vit-chips">${list.map((v) => {
+      const late = !taken[v.id] && currentDay === today() && nowMins >= hmMins(v.time);
+      return `<button class="vit-chip ${taken[v.id] ? "on" : ""} ${late ? "late" : ""}" data-act="vit-toggle" data-id="${v.id}" aria-pressed="${!!taken[v.id]}">
+        <i>${taken[v.id] ? "✓" : ""}</i><span><b>${esc(v.name)}</b><small>${taken[v.id] ? "Taken" : fmtClock(v.time)}</small></span></button>`;
+    }).join("")}</div>
+  </div>`;
+}
+
+function takeVitamins(ids) {
+  if (!ids.length) return;
+  const day = ensureDay();
+  day.vitamins ||= {};
+  for (const id of ids) day.vitamins[id] = Date.now();
+  save(); render();
+  const all = vitaminsSorted().every((v) => day.vitamins[v.id]);
+  toast(all ? "💊 All vitamins done ✓" : `💊 ${ids.length > 1 ? `${ids.length} ticked off` : "Ticked off"}`);
+}
+function toggleVitamin(id) {
+  const day = ensureDay();
+  day.vitamins ||= {};
+  if (day.vitamins[id]) { delete day.vitamins[id]; save(); render(); }
+  else takeVitamins([id]);
+}
+
+function openVitamins() {
+  const p = P();
+  p.vitamins ||= [];
+  openSheet(`${sheetTitle("💊 Vitamins & supplements")}
+    <p class="small muted" style="margin-top:0">Add what you take and when. Tick them off on Today — if one isn't ticked off by its time, it shows in ⏰ Still to do and your coach reminds you (while the app is open).</p>
+    <div class="vit-list">${vitaminsSorted(p).map((v) => `<div class="vit-row">
+      <input class="input" data-vn="${v.id}" value="${esc(v.name)}" maxlength="40" aria-label="Name">
+      <input type="time" class="input ci-time" data-vt="${v.id}" value="${v.time}" aria-label="Time">
+      <button class="vit-rm" data-act="vit-del" data-id="${v.id}" aria-label="Remove ${esc(v.name)}">✕</button></div>`).join("") || `<div class="empty" style="padding:12px">Nothing added yet.</div>`}</div>
+    <form id="vitForm" class="vit-add">
+      <input class="input" id="vitName" name="name" placeholder="Name, e.g. Vitamin D" maxlength="40" required autocomplete="off">
+      <input type="time" class="input ci-time" name="time" value="09:00" aria-label="Time">
+      <button class="btn">Add</button>
+    </form>
+    <div class="chips" style="margin-top:10px">${VIT_SUGGEST.filter((s) => !p.vitamins.some((v) => v.name.toLowerCase() === s.toLowerCase())).map((s) => `<button type="button" class="chip" data-act="vit-sugg" data-v="${s}">${s}</button>`).join("")}</div>
+    <p class="hint" style="margin-top:12px">A reminder only — for doses or how supplements mix with medication, check with your doctor or pharmacist.</p>`, () => render());
+  $("#sheetBody").querySelectorAll("[data-vn]").forEach((el) => el.addEventListener("change", () => { const v = p.vitamins.find((x) => x.id === el.dataset.vn); if (v && el.value.trim()) { v.name = el.value.trim(); save(); } }));
+  $("#sheetBody").querySelectorAll("[data-vt]").forEach((el) => el.addEventListener("change", () => { const v = p.vitamins.find((x) => x.id === el.dataset.vt); if (v && el.value) { v.time = el.value; save(); } }));
+  $("#vitForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target));
+    if (!f.name.trim()) return;
+    p.vitamins.push({ id: uid(), name: f.name.trim(), time: f.time || "09:00" });
+    save(); openVitamins();
+    toast(`Added ${f.name.trim()}`);
+  });
+}
+
 function openCheckins() {
   const cfg = checkinCfg();
   openSheet(`${sheetTitle("⏰ Check-ins")}
@@ -3357,7 +3435,7 @@ function openCheckins() {
     <div class="ci-list">${Object.entries(CHECKS).map(([k, c]) => `<label class="ci-row">
       <input type="checkbox" data-ck="${k}" ${cfg[k].on ? "checked" : ""}>
       <span class="ci-txt"><b>${c.emo} ${c.label}</b><small>${c.desc} by</small></span>
-      <input type="time" class="input ci-time" data-ct="${k}" value="${cfg[k].time}">
+      ${c.perItem ? `<button type="button" class="pill-btn" data-act="vitamins-open">Times ›</button>` : `<input type="time" class="input ci-time" data-ct="${k}" value="${cfg[k].time}">`}
     </label>`).join("")}</div>`, () => render());
   $("#sheetBody").querySelectorAll("[data-ck]").forEach((el) => el.addEventListener("change", () => { checkinCfg()[el.dataset.ck].on = el.checked; save(); }));
   $("#sheetBody").querySelectorAll("[data-ct]").forEach((el) => el.addEventListener("change", () => { if (el.value) { checkinCfg()[el.dataset.ct].time = el.value; save(); } }));
@@ -3771,6 +3849,14 @@ document.addEventListener("click", (ev) => {
     case "mode": p.mode = v; save(); render(); break;
     case "glow": p.glow = v; save(); render(); break;
     case "checkins-open": openCheckins(); break;
+    case "vitamins-open": openVitamins(); break;
+    case "vit-toggle": toggleVitamin(t.dataset.id); break;
+    case "vit-del": {
+      const v = (p.vitamins || []).find((x) => x.id === t.dataset.id);
+      if (v && confirm(`Remove ${v.name}?`)) { p.vitamins = p.vitamins.filter((x) => x.id !== v.id); save(); openVitamins(); }
+      break;
+    }
+    case "vit-sugg": { const n = $("#vitName"); if (n) { n.value = v; n.focus(); } break; }
     case "checkin-go": {
       const k = t.dataset.k;
       if (k === "water") {
@@ -3781,6 +3867,7 @@ document.addEventListener("click", (ev) => {
       }
       else if (k === "move") { tab = "fitness"; render(); openFitnessAdd(); }
       else if (k === "weigh") openWeightSheet();
+      else if (k === "vitamins") { currentDay = today(); takeVitamins(vitaminsDue().map((v) => v.id)); }
       else { lbl = null; openAdd(CHECKS[k].meal || null); }
       break;
     }

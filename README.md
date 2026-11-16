@@ -6,6 +6,7 @@ A calorie and macro tracker that runs as an installable web app (PWA) on iPhone,
 - Profile setup: sex, age, height, weight, goal weight, activity level and pace. Calculates BMR, maintenance calories, a daily calorie goal and an estimated goal date (Mifflin-St Jeor).
 - Macro coach: pick calories by pace, protein by grams per lb of goal weight, fat at a healthy amount, and carbs fill the rest. Includes a "What are macros?" explainer. % presets are still available.
 - Daily log with Breakfast, Lunch, Dinner and Snacks, a calorie ring, macro bars, water cups and "copy yesterday".
+- Vitamins & supplements: each person lists what they take and when (Settings → Vitamins & supplements), ticks them off on Today, and gets a check-in from their coach if one isn't ticked off by its time (while the app is open).
 - Food entry: type or dictate what you ate (from a bar on the Today screen), photo + Claude estimate, nutrition label scan + scale weight, My foods, or manual entry.
 - Weight log with a 7-day trend chart, plus a weekly weigh-in day whose number is highlighted with week-over-week change.
 - Fitness tab: a personal training plan and workout logger (below), plus workouts, steps, sleep, resting HR and HRV. Import Peloton, RingConn or other screenshots and Claude fills them in. Workout calories can optionally be added to the food goal.

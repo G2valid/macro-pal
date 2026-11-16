@@ -818,6 +818,10 @@ export const BESTIE = {
     "Hold on. No {meal}?? We don't skip the log, we SERVE the log. Go!",
     "Quick check-in, icon: {meal}. Logged? No? Fix it and come back gorgeous.",
   ] },
+  checkin_vitamins: { any: [
+    "Bestie!! It's {time} and {vitamin}?? Still in the bottle?? Take it. Glow up responsibly. 💊",
+    "Not to be dramatic but {vitamin}?? Untaken?? Tick it off, icon. Your future self is screaming thank you.",
+  ] },
   checkin_weigh: { any: [
     "Weigh-in day, bestie! Hop on the scale. It's data, not a verdict.",
     "Scale. You. Now. Then we move on with our fabulous day. 💅",

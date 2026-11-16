@@ -430,6 +430,10 @@ export const SANTA = {
     "Ho ho... hold on. It's {time} and {meal} isn't logged. Even the elves get a meal break.",
     "Mrs. Claus says skipping {meal} is not a strategy, my friend. Log it.",
   ] },
+  checkin_vitamins: { any: [
+    "Ho ho... hold on. It's {time} and {vitamin} — still on the list. I check my lists twice. Tick it off.",
+    "The elves take their {vitamin} at {time} sharp. Workshop rules. Your turn.",
+  ] },
   checkin_weigh: { any: [
     "Weigh-in day! I check my numbers every December. Brave soul. Hop on.",
     "The scale awaits, my friend. It's information, not the Naughty List.",

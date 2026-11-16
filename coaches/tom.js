@@ -437,6 +437,10 @@ export const TOM = {
     "It's {time} and no {meal}?? Eat something. Something that ISN'T me. Log it.",
     "{Meal} not logged. Hungry people make bad decisions. Bad decisions involve turkeys.",
   ] },
+  checkin_vitamins: { any: [
+    "It's {time}. {vitamin}. Take it. A healthy human is a calm human. Calm humans don't go looking for turkeys.",
+    "{vitamin} still untaken? Tick it off. I'd tell you to eat something instead, but I'm not volunteering.",
+  ] },
   checkin_weigh: { any: [
     "Weigh-in day. Step on the scale. And please don't use the word 'plump.' Triggering.",
     "Scale time. It's just a number. Trust me. They weigh me every November.",

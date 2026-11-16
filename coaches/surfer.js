@@ -748,6 +748,10 @@ export const SURFER = {
     "Duuude. It's {time} and no {meal}? Gotta fuel up before the next set, bro.",
     "Gnarly reminder: {meal}'s not logged. Grab some grub, log it, ride on. 🤙",
   ] },
+  checkin_vitamins: { any: [
+    "Duuude, it's {time}. {vitamin} time. Pop it, tick it, ride on. 🤙",
+    "Gnarly reminder: {vitamin}, still chillin' in the bottle, bro. Grab it.",
+  ] },
   checkin_weigh: { any: [
     "Weigh-in day, dude. Quick hop on the scale. Just checkin' the tide.",
     "Scale time, bro. No stress. Numbers come and go like waves. 🌊",

@@ -374,6 +374,10 @@ export const BUNNY = {
     "Hey! It's {time}. No {meal}? Need fuel to move. Hop to it.",
     "{Meal}? Not logged. Legs can't run on nothing. Eat. Log. Move.",
   ] },
+  checkin_vitamins: { any: [
+    "{time}. {vitamin}. Down the hatch. Then hop.",
+    "Legs need parts. Parts need {vitamin}. Take it. Tick it.",
+  ] },
   checkin_weigh: { any: [
     "Weigh-in day! Quick step on the scale. Then go use those legs.",
     "Scale time. Just data. Your body's for using, not just measuring.",

@@ -38,6 +38,7 @@ export const TRIGGERS = [
   ["checkin_protein", "checkin"],
   ["checkin_water", "checkin"],
   ["checkin_move", "checkin"],
+  ["checkin_vitamins", "checkin"],
   // Nudges
   ["calories_over_large", "nudge"],
   ["calories_over_small", "nudge"],
@@ -90,7 +91,7 @@ export const LINE_ID = { checkin_breakfast: "checkin_meal", checkin_lunch: "chec
 // Until a coach has lines for a trigger, borrow its closest line (followed as a chain).
 export const FALLBACK = {
   day_under_calories_way: "day_under_calories", calories_low_late: "missed", food_turkey: "food_logged", food_garlic: "food_logged",
-  checkin_meal: "nothing_logged_afternoon", checkin_water: "water_low_late", checkin_protein: "protein_low_late", checkin_move: "steps_low_late", checkin_weigh: "app_open_morning",
+  checkin_meal: "nothing_logged_afternoon", checkin_water: "water_low_late", checkin_protein: "protein_low_late", checkin_move: "steps_low_late", checkin_weigh: "app_open_morning", checkin_vitamins: "tip",
   coach_picked_offseason: "coach_picked", coach_picked: "app_open_morning",
   app_open_morning: "morning", app_open_afternoon: "afternoon", app_open_evening: "evening", app_open_late: "evening",
   monday_open: "morning", friday_open: "afternoon", weekend_open: "morning",

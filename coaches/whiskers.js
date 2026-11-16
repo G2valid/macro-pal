@@ -713,6 +713,10 @@ export const WHISKERS = {
     "It is {time}. The human has not recorded {meal}. I have already eaten twice. Explain yourself.",
     "No {meal} logged. Unacceptable. Even I am fed on schedule. Usually by screaming.",
   ] },
+  checkin_vitamins: { any: [
+    "It is {time}. The human has not taken {vitamin}. I take my medicine hidden in a treat. Be more like me.",
+    "{vitamin}. Untaken. I am not angry. I am simply staring at the bottle. And then at you.",
+  ] },
   checkin_weigh: { any: [
     "It is weigh-in day. Step upon the device. I will observe. Judgmentally.",
     "The scale awaits, human. I sat on it earlier. It said 'magnificent.' Your turn.",

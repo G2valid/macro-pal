@@ -676,6 +676,10 @@ export const DAD = {
     "Hey sport, it's {time} and no {meal} logged. I'm not mad. I'm just... checking the log.",
     "{Meal}? Not in the log. You know what they call a skipped meal? A missed steak. ...Go eat.",
   ] },
+  checkin_vitamins: { any: [
+    "Hey sport, it's {time}. {vitamin}. With water, not soda. I'm watching.",
+    "{vitamin} still in the bottle? That's like buying a new grill and never lighting it. Take it.",
+  ] },
   checkin_weigh: { any: [
     "Weigh-in day, champ. Hop on the scale. I'd make a joke but it might weigh on you.",
     "Scale time. Same rules as the house: shoes off. Log the number.",

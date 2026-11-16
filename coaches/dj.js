@@ -710,6 +710,10 @@ export const DJ = {
     "Yo! {time} and no {meal} on the decks. Drop that track in the log! 🎧",
     "Record scratch. Where's {meal}? Log it and we keep the set going.",
   ] },
+  checkin_vitamins: { any: [
+    "Yo, {time} — next in the queue: {vitamin}. Don't skip the track. 💊🎧",
+    "Deep cut of the day: {vitamin}. Untaken. Press play, tick it off.",
+  ] },
   checkin_weigh: { any: [
     "Weigh-in day! Quick soundcheck on the scale. Then back to the mix.",
     "It's weigh-in day. Step up to the scale like it's the booth. Log the number. 🎚️",

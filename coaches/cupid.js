@@ -397,6 +397,10 @@ export const CUPID = {
     "It's {time} and no {meal}. I've seen better commitment on a third date. Log it.",
     "Love yourself enough to eat {meal}. And log it. That's the whole speech.",
   ] },
+  checkin_vitamins: { any: [
+    "It's {time}. {vitamin}: waiting on you longer than my last client waited for a text back. Take it.",
+    "Commitment test: {vitamin}. Every day. Same time. You can do this. Probably.",
+  ] },
   checkin_weigh: { any: [
     "Weigh-in day. Step on the scale. It's not a relationship. It doesn't get to define you.",
     "Scale time. Quick and painless. Unlike most of my clients' love lives.",
