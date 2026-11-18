@@ -344,7 +344,7 @@ function renderToday() {
           ${tg.bonus ? `<div><span class="muted">incl. exercise</span><b>+${tg.bonus}</b></div>` : ""}
           <div><span class="muted">Eaten</span><b>${r0(tot.kcal)}</b></div>
           <div><span class="muted">${over ? "Over" : "Remaining"}</span><b>${r0(Math.abs(remaining))}</b></div>
-          ${(() => { const ci = isToday && cycleInfo(); return ci ? `<div><span class="goal-chip">${PHASES[ci.phase][0]} Cycle day ${ci.day}</span></div>` : ""; })()}
+          ${(() => { const ci = isToday && cycleInfo(); return ci ? `<div><span class="goal-chip">${PHASES[ci.phase][0]} ${ci.inPeriod ? "Period" : "Cycle"} day ${ci.day}</span></div>` : ""; })()}
           <div><span class="goal-chip">${tg.direction === "lose" ? "📉 Losing" : tg.direction === "gain" ? "📈 Gaining" : "⚖️ Maintaining"} · ${fmtW(latestWeightKg(), 0)} → ${fmtW(p.goalWeightKg, 0)}</span></div>
         </div>
       </div>
@@ -3072,24 +3072,38 @@ $("#progressPhotoInput").addEventListener("change", async (e) => {
 });
 
 /* ---------- Cycle tracking ---------- */
+// p.cycle = { enabled, starts: [ymd…], ends: { [start ymd]: end ymd }, periodLen }
+const MAX_PERIOD = 14; // a logged period longer than this is almost certainly a missed start
+const dayDiff = (a, b) => Math.round((parseYmd(b) - parseYmd(a)) / 864e5);
+const shortDate = (s, year) => parseYmd(s).toLocaleDateString(undefined, { month: "short", day: "numeric", ...(year ? { year: "numeric" } : {}) });
+
+/** Average of the last 6 logged period lengths, or the manual setting if none are logged. */
+function typicalPeriod(c) {
+  const lens = Object.keys(c.ends || {}).sort().map((s) => dayDiff(s, c.ends[s]) + 1).filter((n) => n >= 1 && n <= MAX_PERIOD).slice(-6);
+  return lens.length ? Math.round(lens.reduce((x, y) => x + y, 0) / lens.length) : c.periodLen || 5;
+}
+
 function cycleInfo(date = today(), p = P()) {
   const c = p.cycle;
   if (!c?.enabled || !c.starts?.length) return null;
   const starts = [...c.starts].sort();
   const past = starts.filter((s) => s <= date);
   if (!past.length) return null;
-  const gaps = starts.slice(1).map((s, i) => (parseYmd(s) - parseYmd(starts[i])) / 864e5).filter((g) => g >= 18 && g <= 45).slice(-6);
+  const gaps = starts.slice(1).map((s, i) => dayDiff(starts[i], s)).filter((g) => g >= 18 && g <= 45).slice(-6);
   const avg = gaps.length ? Math.round(gaps.reduce((x, y) => x + y, 0) / gaps.length) : 28;
   const last = past[past.length - 1];
-  const day = Math.round((parseYmd(date) - parseYmd(last)) / 864e5) + 1;
+  const day = dayDiff(last, date) + 1;
   const next = addDays(last, avg);
-  const toNext = Math.round((parseYmd(next) - parseYmd(date)) / 864e5);
-  const periodLen = c.periodLen || 5;
+  const toNext = dayDiff(date, next);
+  // Use the logged end when there is one; otherwise assume a typical-length period.
+  const end = c.ends?.[last] || null;
+  const periodDays = end ? dayDiff(last, end) + 1 : typicalPeriod(c);
+  const inPeriod = day <= periodDays;
   let phase = "follicular";
-  if (day <= periodLen) phase = "period";
+  if (inPeriod) phase = "period";
   else if (Math.abs(day - (avg - 14)) <= 1) phase = "ovulation";
   else if (day > avg - 14) phase = toNext <= 5 ? "pre" : "luteal";
-  return { day, avg, next, toNext, phase, last };
+  return { day, avg, next, toNext, phase, last, end, periodDays, inPeriod };
 }
 const PHASES = {
   period: ["🌸", "Period", "Water weight and cravings are normal. Go easy on yourself."],
@@ -3099,15 +3113,32 @@ const PHASES = {
   pre: ["🌧️", "Pre-period", "The scale often jumps 1–3 lb now. That's water, not fat."],
 };
 
+/** Attach an end date to the period that started most recently on or before it. */
+function logPeriodEnd(endDate) {
+  const c = P().cycle;
+  const start = [...(c.starts || [])].sort().filter((s) => s <= endDate).pop();
+  if (!start) { toast("Log the day it started first."); return false; }
+  const len = dayDiff(start, endDate) + 1;
+  if (len > MAX_PERIOD) { toast(`That's ${len} days after the last logged start (${shortDate(start)}). Log when this period started first.`); return false; }
+  (c.ends ||= {})[start] = endDate;
+  save();
+  toast(`Logged a ${len}-day period 🌸`);
+  return true;
+}
+
 function renderCycle() {
   const p = P();
   if (!p.cycle?.enabled) return "";
   const ci = cycleInfo();
   const [emo, name, tip] = ci ? PHASES[ci.phase] : ["🌸", "Cycle", ""];
+  const nextTxt = !ci ? "" : ci.toNext > 0 ? `next period in ~${ci.toNext} days` : ci.toNext === 0 ? "next period expected today" : `period ${-ci.toNext} days late${ci.toNext <= -7 ? " — if it already started, log it below" : ""}`;
+  // Offer a one-tap "it's over" while the current period has no end logged.
+  const askEnd = ci && !ci.end && ci.day <= Math.min(MAX_PERIOD, ci.periodDays + 3);
   return `<div class="card">
     <div class="card-head"><h2>${emo} Cycle</h2><span class="meta">🔒 Private</span></div>
-    ${ci ? `<div class="wk-hero"><div><div class="v">Day ${ci.day}</div><div class="small muted">${name} · next period ${ci.toNext > 0 ? `in ~${ci.toNext} days` : ci.toNext === 0 ? "expected today" : `${-ci.toNext} days late`}</div></div></div>
+    ${ci ? `<div class="wk-hero"><div><div class="v">${ci.inPeriod ? "Period" : "Cycle"} day ${ci.day}</div><div class="small muted">${ci.inPeriod ? `Period · ${ci.end ? "logged as ending today" : `usually ~${ci.periodDays} days`}` : `${name} · ${nextTxt}`}</div></div></div>
       <div class="note small" style="margin:10px 0">${tip}</div>` : `<p class="small muted" style="margin-top:0">Log the first day of your period to start predictions.</p>`}
+    ${askEnd ? `<button class="btn" data-act="cycle-end" style="margin-bottom:8px">✓ Period ended today</button>` : ""}
     <button class="btn secondary" data-act="cycle-sheet">🌸 Log period / history</button>
   </div>`;
 }
@@ -3116,16 +3147,37 @@ function openCycle() {
   const p = P();
   const c = (p.cycle ||= { enabled: true, starts: [], periodLen: 5 });
   const ci = cycleInfo();
+  const starts = [...c.starts].sort();
+  const typ = typicalPeriod(c);
+  const logged = Object.keys(c.ends || {}).length > 0;
+  // Pre-fill "ended on" for the latest period that has no end yet.
+  const latest = starts[starts.length - 1];
+  const openPeriod = latest && !c.ends?.[latest] && dayDiff(latest, today()) < MAX_PERIOD;
+  const endGuess = !latest ? today() : openPeriod ? today() : [addDays(latest, typ - 1), today()].sort()[0];
+  const startBlock = `<label class="field"><span>Period started on</span><input type="date" id="cycStart" value="${today()}" max="${today()}"></label>
+    <button class="btn${openPeriod ? " secondary" : ""}" data-act="cycle-log">Log period start</button>`;
+  const endBlock = latest ? `<label class="field"><span>Period ended on</span><input type="date" id="cycEnd" value="${endGuess}" min="${starts[0]}" max="${today()}"></label>
+    <button class="btn${openPeriod ? "" : " secondary"}" data-act="cycle-end-log">Log period end</button>` : "";
+  const row = (s, i) => {
+    const e = c.ends?.[s];
+    const nextStart = starts[i + 1];
+    const bits = [
+      e ? `${dayDiff(s, e) + 1}-day period (to ${shortDate(e)})` : !nextStart && dayDiff(s, today()) < MAX_PERIOD ? "period ongoing" : "end not logged",
+      nextStart ? `${dayDiff(s, nextStart)}-day cycle` : `cycle day ${dayDiff(s, today()) + 1} now`,
+    ];
+    return `<div class="wl"><span>${shortDate(s, true)}<br><span class="small muted">${bits.join(" · ")}</span></span><button data-act="cycle-del" data-v="${s}" aria-label="Delete">✕</button></div>`;
+  };
   openSheet(`${sheetTitle("Cycle")}
     <p class="small muted" style="margin-top:0">🔒 Only stored on this phone and never shared.</p>
-    <label class="field"><span>Period started on</span><input type="date" id="cycStart" value="${today()}" max="${today()}"></label>
-    <button class="btn" data-act="cycle-log">Log period start</button>
+    ${openPeriod ? endBlock + `<div style="height:14px"></div>` + startBlock : startBlock + (endBlock ? `<div style="height:14px"></div>` + endBlock : "")}
     <div class="row2" style="margin-top:14px">
-      <label class="field"><span>Typical period length (days)</span><input type="number" id="cycLen" inputmode="numeric" min="2" max="10" value="${c.periodLen || 5}"></label>
+      ${logged
+        ? `<div class="field"><span>Average period</span><div class="input" style="background:var(--surface-2)">${typ} days</div></div>`
+        : `<label class="field"><span>Typical period length (days)</span><input type="number" id="cycLen" inputmode="numeric" min="2" max="10" value="${c.periodLen || 5}"></label>`}
       <div class="field"><span>Average cycle</span><div class="input" style="background:var(--surface-2)">${ci ? `${ci.avg} days` : "—"}</div></div>
     </div>
     <div class="card"><div class="card-head"><h2>History</h2></div>
-      <div class="weigh-list">${[...c.starts].sort().reverse().map((d) => `<div class="wl"><span>${parseYmd(d).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" })}</span><button data-act="cycle-del" data-v="${d}" aria-label="Delete">✕</button></div>`).join("") || `<div class="empty">No periods logged yet.</div>`}</div>
+      <div class="weigh-list">${starts.map(row).reverse().join("") || `<div class="empty">No periods logged yet.</div>`}</div>
     </div>`, () => {
     const len = Number($("#cycLen")?.value);
     if (len >= 2 && len <= 10) { c.periodLen = len; save(); }
@@ -3676,7 +3728,12 @@ document.addEventListener("click", (ev) => {
       save(); closeSheet(); toast("Logged 🌸");
       break;
     }
-    case "cycle-del": p.cycle.starts = p.cycle.starts.filter((x) => x !== v); save(); closeSheet(); openCycle(); break;
+    case "cycle-end": if (logPeriodEnd(today())) render(); break;
+    case "cycle-end-log": if (logPeriodEnd($("#cycEnd").value || today())) { closeSheet(); openCycle(); } break;
+    case "cycle-del":
+      p.cycle.starts = p.cycle.starts.filter((x) => x !== v);
+      if (p.cycle.ends) delete p.cycle.ends[v];
+      save(); closeSheet(); openCycle(); break;
     case "mood": ideas.moods.has(v) ? ideas.moods.delete(v) : ideas.moods.add(v); t.classList.toggle("on"); break;
     case "run-ideas": runIdeas(); break;
     case "idea-meal": ideas.meal = v; renderIdeas(); break;
